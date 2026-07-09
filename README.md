@@ -110,7 +110,7 @@ output "sfk_handback" {
 ## Registering with Starfolk (the second half)
 
 This module creates the AWS side. Registering these values with your Starfolk
-environment is a separate step — send Starfolk the `sfk_handback` output.
+environment is a separate step — send Starfolk the `sfk_handback` output via slack. There are no secrets here- only AWS ARNs
 
 ## Requirements
 
