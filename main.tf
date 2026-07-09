@@ -1,0 +1,277 @@
+# Starfolk BYOC — provisions, in your AWS account, everything Starfolk needs to
+# launch and manage devboxes there, expressed against an EXISTING VPC you supply.
+
+data "aws_caller_identity" "current" {}
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "random_uuid" "external_id" {}
+
+locals {
+  account_id = data.aws_caller_identity.current.account_id
+  # Derive the region from a created ARN rather than the aws_region data source:
+  # its `name` attribute is deprecated on new providers while `region` is absent
+  # on older ones — the ARN split is version-agnostic. (SG ARN is
+  # arn:aws:ec2:<region>:<acct>:security-group/...)
+  region      = split(":", aws_security_group.this.arn)[3]
+  external_id = var.external_id != "" ? var.external_id : "sfk-${random_uuid.external_id.result}"
+  azs         = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, length(var.subnet_cidrs))
+  common_tags = merge({ "sfk:byoc" = "true" }, var.tags)
+
+  # ── Least-privilege pinning ──
+  # RunInstances is pinned to the exact subnet + SG we create; PassRole to the
+  # devbox instance-profile role; SendCommand tag-scoped to SFK-managed boxes.
+  run_instances_resources = concat(
+    aws_subnet.this[*].arn,
+    [
+      aws_security_group.this.arn,
+      "arn:aws:ec2:*:*:image/*",
+      "arn:aws:ec2:*:*:network-interface/*",
+      "arn:aws:ec2:*:*:volume/*",
+      "arn:aws:ec2:*:*:key-pair/*",
+    ],
+  )
+
+  # Human/browser-facing ingress from each allowed CIDR (posture-dependent):
+  #   22   SSH
+  #   443  public web-PTY listener (ticket-gated wss)
+  # DEVBOX_PORT 7681 is deliberately NOT here — it's the full control surface and
+  # only the *coordinator* connects to it (ws://<ip>:7681), so it gets its own
+  # coordinator-scoped rule below rather than being opened to the human CIDRs.
+  ssh_ports = { ssh = 22, webpty = 443 }
+  ssh_rules = {
+    for pair in setproduct(keys(local.ssh_ports), var.ssh_ingress_cidrs) :
+    "${pair[0]}-${pair[1]}" => { port = local.ssh_ports[pair[0]], cidr = pair[1] }
+  }
+  # 7681 opened only to the Starfolk coordinator's egress range(s). The coordinator
+  # proxies the browser terminal to the box here; the browser never hits it.
+  coordinator_rules = { for cidr in var.coordinator_ingress_cidrs : cidr => cidr }
+}
+
+# ── Dedicated subnets in the existing VPC (one per AZ) ───────────────────────
+resource "aws_subnet" "this" {
+  count                   = length(var.subnet_cidrs)
+  vpc_id                  = var.vpc_id
+  cidr_block              = var.subnet_cidrs[count.index]
+  availability_zone       = local.azs[count.index]
+  map_public_ip_on_launch = var.assign_public_ip
+  tags                    = merge(local.common_tags, { Name = "${var.name_prefix}-${count.index}" })
+}
+
+# Associate with the customer's existing route table (public/IGW or NAT). We
+# only associate — we never create or mutate the customer's routing.
+resource "aws_route_table_association" "this" {
+  count          = length(aws_subnet.this)
+  subnet_id      = aws_subnet.this[count.index].id
+  route_table_id = var.route_table_id
+}
+
+# ── Dedicated security group ─────────────────────────────────────────────────
+resource "aws_security_group" "this" {
+  name        = "${var.name_prefix}-sg"
+  description = "Starfolk BYOC devboxes"
+  vpc_id      = var.vpc_id
+  tags        = merge(local.common_tags, { Name = "${var.name_prefix}-sg" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nebula" {
+  count             = var.enable_nebula_ingress ? 1 : 0
+  security_group_id = aws_security_group.this.id
+  ip_protocol       = "udp"
+  from_port         = 51820
+  to_port           = 51820
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Nebula tunnel listen port (CA-authenticated)"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ssh_webpty" {
+  for_each          = local.ssh_rules
+  security_group_id = aws_security_group.this.id
+  ip_protocol       = "tcp"
+  from_port         = each.value.port
+  to_port           = each.value.port
+  cidr_ipv4         = each.value.cidr
+  description       = "TCP ${each.value.port} (SSH/web-PTY) from ${each.value.cidr}"
+}
+
+# DEVBOX_PORT (7681): the coordinator's terminal proxy dials ws://<ip>:7681
+# directly, so it must be reachable from the coordinator's egress — and ONLY
+# from there (it's the full box control surface). Scoped to coordinator_ingress_cidrs,
+# which differs per coordinator deployment (prod vs dev vs a local devbox).
+resource "aws_vpc_security_group_ingress_rule" "coordinator" {
+  for_each          = local.coordinator_rules
+  security_group_id = aws_security_group.this.id
+  ip_protocol       = "tcp"
+  from_port         = 7681
+  to_port           = 7681
+  cidr_ipv4         = each.value
+  description       = "TCP 7681 (DEVBOX_PORT) from Starfolk coordinator ${each.value}"
+}
+
+# Terraform-created SGs have no default egress; add an explicit allow-all.
+resource "aws_vpc_security_group_egress_rule" "all" {
+  security_group_id = aws_security_group.this.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow all egress"
+}
+
+# ── Devbox instance profile (SSM agent registration) ────────────────────────
+resource "aws_iam_role" "devbox" {
+  name = var.name_prefix
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.devbox.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "devbox" {
+  name = var.name_prefix
+  role = aws_iam_role.devbox.name
+}
+
+# ── Cross-account control role (assumed by the coordinator) ──────────────────
+resource "aws_iam_role" "control" {
+  name                 = "${var.name_prefix}-control"
+  description          = "Assumed by the Starfolk coordinator to launch/manage BYOC devboxes"
+  max_session_duration = 3600
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = var.sfk_principal_arn }
+      Action    = "sts:AssumeRole"
+      Condition = { StringEquals = { "sts:ExternalId" = local.external_id } }
+    }]
+  })
+  tags = local.common_tags
+}
+
+locals {
+  # KMS lets the control role launch a CMK-encrypted devbox AMI: the coordinator
+  # assumes this role, so RunInstances must Decrypt the shared snapshot and let
+  # EC2 make its own per-volume grants. Split use vs. CreateGrant so the
+  # AWS-resource condition gates only grant creation (mirrors setup-aws.sh).
+  # Empty ami_kms_key_arns (unencrypted AMI) => no KMS statements.
+  # for-with-if (not a ?: ) so the empty case is a filtered-out comprehension
+  # rather than an empty tuple: a ternary would try to unify the 2-element tuple
+  # with [] (0-element) and fail with "inconsistent conditional result types".
+  control_kms_statements = [
+    for stmt in [
+      {
+        Sid      = "SFKDevboxAMIKMSUse"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"]
+        Resource = var.ami_kms_key_arns
+      },
+      {
+        Sid       = "SFKDevboxAMIKMSGrant"
+        Effect    = "Allow"
+        Action    = ["kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"]
+        Resource  = var.ami_kms_key_arns
+        Condition = { Bool = { "kms:GrantIsForAWSResource" = "true" } }
+      },
+    ] : stmt
+    if length(var.ami_kms_key_arns) > 0
+  ]
+}
+
+resource "aws_iam_role_policy" "control" {
+  name = "sfk-control"
+  role = aws_iam_role.control.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat([
+      {
+        Sid    = "EC2Describe"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances", "ec2:DescribeInstanceAttribute", "ec2:DescribeInstanceTypes",
+          "ec2:DescribeTags", "ec2:DescribeImages", "ec2:DescribeAddresses",
+          "ec2:DescribeSecurityGroups", "ec2:DescribeSubnets", "ec2:DescribeKeyPairs",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid       = "EC2RunInstances"
+        Effect    = "Allow"
+        Action    = "ec2:RunInstances"
+        Resource  = "arn:aws:ec2:*:*:instance/*"
+        Condition = { "ForAnyValue:StringLike" = { "aws:TagKeys" = "sfk:*:managed" } }
+      },
+      {
+        Sid      = "EC2RunInstancesResources"
+        Effect   = "Allow"
+        Action   = "ec2:RunInstances"
+        Resource = local.run_instances_resources
+      },
+      {
+        Sid       = "EC2CreateTags"
+        Effect    = "Allow"
+        Action    = "ec2:CreateTags"
+        Resource  = ["arn:aws:ec2:*:*:instance/*", "arn:aws:ec2:*:*:volume/*"]
+        Condition = { StringEquals = { "ec2:CreateAction" = "RunInstances" } }
+      },
+      {
+        Sid    = "EC2ManageTaggedInstances"
+        Effect = "Allow"
+        Action = [
+          "ec2:TerminateInstances", "ec2:StopInstances", "ec2:StartInstances",
+          "ec2:CreateTags", "ec2:DeleteTags", "ec2:ModifyInstanceAttribute",
+        ]
+        Resource  = "arn:aws:ec2:*:*:instance/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid       = "PassRole"
+        Effect    = "Allow"
+        Action    = "iam:PassRole"
+        Resource  = aws_iam_role.devbox.arn
+        Condition = { StringEquals = { "iam:PassedToService" = "ec2.amazonaws.com" } }
+      },
+      {
+        Sid      = "CloudWatchAlarms"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms"]
+        Resource = ["arn:aws:cloudwatch:*:*:alarm:sfk-*-egress-*", "arn:aws:cloudwatch:*:*:alarm:EC2-PublicIPv4-Created"]
+      },
+      {
+        Sid       = "SSMSendCommandInstances"
+        Effect    = "Allow"
+        Action    = ["ssm:SendCommand"]
+        Resource  = "arn:aws:ec2:*:*:instance/*"
+        Condition = { StringEquals = { ("ssm:resourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid      = "SSMSendCommandDocument"
+        Effect   = "Allow"
+        Action   = ["ssm:SendCommand"]
+        Resource = "arn:aws:ssm:*::document/AWS-RunShellScript"
+      },
+      {
+        Sid      = "SSMGetInvocation"
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation"]
+        Resource = "*"
+      },
+      {
+        Sid      = "SSMParameterBootstrap"
+        Effect   = "Allow"
+        Action   = ["ssm:PutParameter", "ssm:DeleteParameter"]
+        Resource = "arn:aws:ssm:*:*:parameter/sfk/*/nebula-bootstrap/*"
+      },
+    ], local.control_kms_statements)
+  })
+}
