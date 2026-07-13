@@ -14,7 +14,7 @@ and apply it with your own credentials; Starfolk never receives a key.
 
 - **Dedicated subnets** (one per `subnet_cidrs` entry) in your `vpc_id`, associated with a route table you already have (`route_table_id`) — we never create or mutate your VPC/IGW/NAT/routing.
 - **Security group** with posture-appropriate ingress.
-- **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account.
+- **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
 `terraform output -json` yields the values to send back to Starfolk.
@@ -55,6 +55,93 @@ reachability would need to be listed explicitly.
 ## How permissions / access work
 
 You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h) credentials. Revoke any time by removing the role. Every action lands in your CloudTrail. Starfolk only ever calls AWS API endpoints — it never connects *to* a box.
+
+## Instance role: own it yourself
+
+By default the module creates the `sfk-devbox` IAM role + instance profile (with
+just `AmazonSSMManagedInstanceCore`, so the SSM agent registers). You don't have
+to let it — two knobs give you control:
+
+- **Bring your own.** Set `create_instance_profile = false` and pass
+  `instance_profile_name` + `instance_role_arn`. The module then creates neither
+  the role nor the profile; the coordinator launches with your profile, and the
+  control role's `iam:PassRole` is pinned to exactly your `instance_role_arn`
+  (nothing else is passable). Your role must carry SSM permissions
+  (`AmazonSSMManagedInstanceCore` or equivalent) or the box never registers. Use
+  this to run a role you author end-to-end — e.g. one with your own
+  `DenyAnyAssumeRole` guardrail.
+- **Keep ours, add the guardrail.** If you'd rather the module keep owning the
+  role, set `deny_instance_role_assume_role = true` to attach a
+  `DenyAnyAssumeRole` guardrail (Deny `sts:AssumeRole` on `*`) to it. The devbox
+  never needs to assume another role, so this caps blast radius if a box is
+  compromised.
+
+```hcl
+# Bring your own devbox role/profile:
+create_instance_profile = false
+instance_profile_name   = "my-devbox-profile"
+instance_role_arn       = "arn:aws:iam::505307261329:role/my-devbox-role"
+
+# — or — keep the module-created role but harden it:
+deny_instance_role_assume_role = true
+```
+
+## Isolating boxes from co-tenant workloads
+
+The module deploys into your **existing** VPC, so the devbox subnets sit
+alongside whatever else you already run there. To wall the boxes off from a
+neighbor, know what each control can and can't do:
+
+- **A dedicated route table does *not* isolate them.** Every subnet has an
+  implicit `local` route to the whole VPC CIDR that can't be removed, so routing
+  can't stop intra-VPC reachability — it only steers *non-local* (internet,
+  peered, TGW) traffic.
+- **Security groups protect *inbound to the boxes*.** Our SG is default-deny
+  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), 7681 (to
+  `coordinator_ingress_cidrs`), and Nebula UDP, with no self-rule — so a neighbor
+  can't open connections *to* the boxes. (Exception: posture A's `["0.0.0.0/0"]`
+  on `ssh_ingress_cidrs` lets any in-VPC host reach 22/443; scope it if that
+  matters.) But the SG's egress is allow-all, so it does **not** stop the boxes
+  from reaching *out* to a neighbor — that's the neighbor's own SG's job.
+
+To fully wall the boxes off from specific neighbors in **both** directions, set
+`isolate_from_cidrs` to those workloads' CIDRs:
+
+```hcl
+isolate_from_cidrs = ["10.0.20.0/24", "10.0.21.0/24"]  # co-tenant subnets
+```
+
+The module then attaches a **network ACL** to the devbox subnets that denies
+those CIDRs inbound + outbound and allows everything else — the boxes keep full
+internet/DNS/SSM but can't reach, or be reached by, the listed workloads. We use
+a NACL (not an SG egress rule) because SGs are allow-only and can't express a
+deny; NACLs are stateless, so the module's allow-all baseline carries return
+traffic. **Don't** try to block the whole VPC CIDR this way — the boxes' in-VPC
+dependencies (SSM interface endpoints, the VPC DNS resolver) live in the VPC
+CIDR and would break; list only the specific neighbors.
+
+## Instance launch configuration (IMDSv2 + EBS encryption)
+
+This module creates no instances and no launch template — the Starfolk
+coordinator issues `RunInstances` directly (into the subnets, SG, and instance
+profile above) each time it launches a box. Two security-relevant properties are
+set on **every** launch, so you can confirm them (and, if you want, enforce them
+from your side — see below):
+
+- **IMDSv2 is required.** Every launch sets `MetadataOptions = { HttpTokens =
+  "required", HttpPutResponseHopLimit = 2 }`, so IMDSv1 is disabled on the box.
+- **The root EBS volume is always encrypted.** The devbox AMI's snapshot is
+  encrypted under a Starfolk-owned CMK (`alias/sfk-devbox-shared`), and a volume
+  created from an encrypted snapshot is itself encrypted under that same key — so
+  the root volume is encrypted by construction regardless of the launch params.
+  The volume is `gp3` with `DeleteOnTermination = true`.
+
+Because the coordinator already complies, you can safely make this
+**self-enforcing** with an SCP or IAM condition on `ec2:RunInstances` (e.g.
+require `ec2:MetadataHttpTokens = required` and `ec2:Encrypted = true`) — those
+guardrails pass rather than blocking launches. Public IP is **not** set on
+`RunInstances`; it's inherited from the subnet's auto-assign setting, which this
+module controls via `assign_public_ip`.
 
 ## Access postures → variables
 

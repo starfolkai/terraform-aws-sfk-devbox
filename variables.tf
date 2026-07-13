@@ -74,6 +74,30 @@ variable "coordinator_ingress_cidrs" {
   EOT
 }
 
+variable "isolate_from_cidrs" {
+  type        = list(string)
+  default     = []
+  description = <<-EOT
+    CIDR(s) of co-tenant workloads in the SAME VPC to fully isolate the devboxes
+    from, in BOTH directions. When non-empty, the module attaches a network ACL
+    to the dedicated devbox subnets that DENYs these CIDRs (inbound + outbound)
+    and allows everything else — so boxes keep full internet/DNS/SSM but cannot
+    reach, or be reached by, the listed workloads. Empty (default) leaves the
+    subnets on the VPC's default ACL (allow-all), relying on security groups
+    alone. We use a NACL rather than an SG egress rule because SGs are allow-only
+    and can't express a deny; NACLs are stateless, so the module's allow-all
+    baseline covers return traffic. Prefer a whole subnet/summary CIDR per
+    neighbor. (Do NOT try to block the whole VPC CIDR this way — the boxes'
+    in-VPC dependencies, SSM interface endpoints and the VPC DNS resolver, live
+    in the VPC CIDR and would break.)
+  EOT
+
+  validation {
+    condition     = length(var.isolate_from_cidrs) <= 18
+    error_message = "isolate_from_cidrs supports up to 18 CIDRs (AWS network ACL rule quota). Summarize into fewer CIDRs, or raise the account NACL rule quota and adjust."
+  }
+}
+
 variable "enable_nebula_ingress" {
   type        = bool
   default     = true
@@ -104,16 +128,74 @@ variable "name_prefix" {
   description = "Name prefix for created resources (role/profile/SG/subnets)."
 }
 
+variable "create_instance_profile" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Whether this module creates the `sfk-devbox` IAM role + instance profile the
+    coordinator launches devboxes with. Leave true to let Starfolk own it. Set
+    false to BRING YOUR OWN — e.g. a role you author with a DenyAnyAssumeRole
+    guardrail — then you MUST also set `instance_profile_name` and
+    `instance_role_arn`. When false the module creates neither the role nor the
+    profile, and the control role's `iam:PassRole` is pinned to exactly your
+    `instance_role_arn`.
+  EOT
+}
+
+variable "instance_profile_name" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Bring-your-own instance profile NAME to launch devboxes with. Required when
+    `create_instance_profile = false`; ignored otherwise. Your profile's role
+    MUST carry `AmazonSSMManagedInstanceCore` (or equivalent SSM permissions) or
+    the box's SSM agent never registers and it can't be managed.
+  EOT
+
+  validation {
+    condition     = var.create_instance_profile || var.instance_profile_name != ""
+    error_message = "instance_profile_name is required when create_instance_profile = false."
+  }
+}
+
+variable "instance_role_arn" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    ARN of the IAM role inside your `instance_profile_name`. Required when
+    `create_instance_profile = false` — the control role's `iam:PassRole` is
+    pinned to exactly this ARN, so it must match the role the profile wraps.
+  EOT
+
+  validation {
+    condition     = var.create_instance_profile || can(regex("^arn:aws:iam::[0-9]{12}:role/", var.instance_role_arn))
+    error_message = "instance_role_arn must be a valid IAM role ARN when create_instance_profile = false."
+  }
+}
+
+variable "deny_instance_role_assume_role" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Attach a DenyAnyAssumeRole guardrail (Deny `sts:AssumeRole` on `*`) to the
+    module-created devbox role. The devbox never needs to assume another role,
+    so this caps blast radius if a box is compromised. Only applies when
+    `create_instance_profile = true` (bring-your-own carries its own guardrails).
+  EOT
+}
+
 variable "ami_kms_key_arns" {
   type        = list(string)
-  default     = ["arn:aws:kms:*:450410490644:key/*"]
+  default     = ["arn:aws:kms:us-east-2:450410490644:key/4bcb6251-1960-46ca-859e-3a5f24757caa"]
   description = <<-EOT
     KMS key ARN(s) the control role may use to launch a devbox AMI whose EBS
     snapshot is encrypted with a Starfolk-owned customer-managed key. The
     coordinator assumes the control role, so RunInstances must Decrypt the shared
-    snapshot and let EC2 create per-volume grants. Defaults to Starfolk's
-    AMI-encryption account; Starfolk can give you the exact key ARN to narrow it.
-    Set to [] if the AMI you launch is unencrypted (no KMS grant emitted).
+    snapshot and let EC2 create per-volume grants. Defaults to the exact
+    `alias/sfk-devbox-shared` CMK (us-east-2) — the single key every shared devbox
+    AMI is encrypted under; the grant is scoped to just this key, not a wildcard.
+    Override only if launching in another region (Starfolk supplies the
+    region-matched key ARN) or with an unencrypted AMI (set to [] — no KMS grant).
   EOT
 }
 

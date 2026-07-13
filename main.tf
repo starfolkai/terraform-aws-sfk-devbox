@@ -20,6 +20,13 @@ locals {
   azs         = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, length(var.subnet_cidrs))
   common_tags = merge({ "sfk:byoc" = "true" }, var.tags)
 
+  # The instance profile the coordinator launches devboxes with, and the role
+  # inside it that iam:PassRole is pinned to. Either the module creates them
+  # (default) or the customer brings their own (create_instance_profile = false)
+  # — e.g. a role carrying a DenyAnyAssumeRole guardrail they own end-to-end.
+  instance_profile_name = var.create_instance_profile ? aws_iam_instance_profile.devbox[0].name : var.instance_profile_name
+  instance_role_arn     = var.create_instance_profile ? aws_iam_role.devbox[0].arn : var.instance_role_arn
+
   # ── Least-privilege pinning ──
   # RunInstances is pinned to the exact subnet + SG we create; PassRole to the
   # devbox instance-profile role; SendCommand tag-scoped to SFK-managed boxes.
@@ -118,9 +125,78 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   description       = "Allow all egress"
 }
 
+# ── Optional co-tenant isolation (network ACL) ───────────────────────────────
+# SGs protect the boxes on inbound but are allow-only, so they can't stop a box
+# from reaching a neighbor in the same VPC. A NACL is the one control that
+# supports DENY, so isolate_from_cidrs is enforced here: deny the listed CIDRs
+# (both directions, low rule numbers → evaluated first), allow everything else.
+# Created only when isolate_from_cidrs is non-empty; otherwise the subnets keep
+# the VPC default ACL (allow-all). Do NOT extend this to the whole VPC CIDR —
+# SSM interface endpoints and the VPC DNS resolver live in it (see the var doc).
+locals {
+  isolation_enabled = length(var.isolate_from_cidrs) > 0
+  # Stable per-CIDR rule numbers starting at 100 (well below the allow-all baseline).
+  isolation_rules = { for i, cidr in var.isolate_from_cidrs : tostring(i) => { num = 100 + i, cidr = cidr } }
+}
+
+resource "aws_network_acl" "isolation" {
+  count      = local.isolation_enabled ? 1 : 0
+  vpc_id     = var.vpc_id
+  subnet_ids = aws_subnet.this[*].id
+  tags       = merge(local.common_tags, { Name = "${var.name_prefix}-isolation" })
+}
+
+resource "aws_network_acl_rule" "deny_ingress" {
+  for_each       = local.isolation_enabled ? local.isolation_rules : {}
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = each.value.num
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "deny"
+  cidr_block     = each.value.cidr
+}
+
+resource "aws_network_acl_rule" "deny_egress" {
+  for_each       = local.isolation_enabled ? local.isolation_rules : {}
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = each.value.num
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "deny"
+  cidr_block     = each.value.cidr
+}
+
+# Allow-all baseline (evaluated after the denies). Both directions, protocol -1
+# — NACLs are stateless, so this single rule per direction carries return traffic
+# for everything not explicitly denied above.
+resource "aws_network_acl_rule" "allow_ingress" {
+  count          = local.isolation_enabled ? 1 : 0
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = 32000
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+}
+
+resource "aws_network_acl_rule" "allow_egress" {
+  count          = local.isolation_enabled ? 1 : 0
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = 32000
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+}
+
 # ── Devbox instance profile (SSM agent registration) ────────────────────────
+# Created only when create_instance_profile = true (the default). Set it false
+# to bring your own profile/role (instance_profile_name + instance_role_arn) —
+# then none of these three resources exist and the coordinator launches with,
+# and iam:PassRole is pinned to, exactly what you passed.
 resource "aws_iam_role" "devbox" {
-  name = var.name_prefix
+  count = var.create_instance_profile ? 1 : 0
+  name  = var.name_prefix
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -133,13 +209,34 @@ resource "aws_iam_role" "devbox" {
 }
 
 resource "aws_iam_role_policy_attachment" "ssm_core" {
-  role       = aws_iam_role.devbox.name
+  count      = var.create_instance_profile ? 1 : 0
+  role       = aws_iam_role.devbox[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Opt-in DenyAnyAssumeRole guardrail on the module-created role: the devbox
+# never needs to assume another role, so denying sts:AssumeRole caps blast
+# radius if the box is compromised. Only attachable when the module owns the
+# role — bring-your-own carries whatever guardrails you author yourself.
+resource "aws_iam_role_policy" "devbox_deny_assume_role" {
+  count = var.create_instance_profile && var.deny_instance_role_assume_role ? 1 : 0
+  name  = "sfk-deny-assume-role"
+  role  = aws_iam_role.devbox[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "DenyAnyAssumeRole"
+      Effect   = "Deny"
+      Action   = "sts:AssumeRole"
+      Resource = "*"
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "devbox" {
-  name = var.name_prefix
-  role = aws_iam_role.devbox.name
+  count = var.create_instance_profile ? 1 : 0
+  name  = var.name_prefix
+  role  = aws_iam_role.devbox[0].name
 }
 
 # ── Cross-account control role (assumed by the coordinator) ──────────────────
@@ -238,7 +335,7 @@ resource "aws_iam_role_policy" "control" {
         Sid       = "PassRole"
         Effect    = "Allow"
         Action    = "iam:PassRole"
-        Resource  = aws_iam_role.devbox.arn
+        Resource  = local.instance_role_arn
         Condition = { StringEquals = { "iam:PassedToService" = "ec2.amazonaws.com" } }
       },
       {
