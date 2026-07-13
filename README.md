@@ -56,6 +56,29 @@ reachability would need to be listed explicitly.
 
 You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h) credentials. Revoke any time by removing the role. Every action lands in your CloudTrail. Starfolk only ever calls AWS API endpoints — it never connects *to* a box.
 
+## Instance launch configuration (IMDSv2 + EBS encryption)
+
+This module creates no instances and no launch template — the Starfolk
+coordinator issues `RunInstances` directly (into the subnets, SG, and instance
+profile above) each time it launches a box. Two security-relevant properties are
+set on **every** launch, so you can confirm them (and, if you want, enforce them
+from your side — see below):
+
+- **IMDSv2 is required.** Every launch sets `MetadataOptions = { HttpTokens =
+  "required", HttpPutResponseHopLimit = 2 }`, so IMDSv1 is disabled on the box.
+- **The root EBS volume is always encrypted.** The devbox AMI's snapshot is
+  encrypted under a Starfolk-owned CMK (`alias/sfk-devbox-shared`), and a volume
+  created from an encrypted snapshot is itself encrypted under that same key — so
+  the root volume is encrypted by construction regardless of the launch params.
+  The volume is `gp3` with `DeleteOnTermination = true`.
+
+Because the coordinator already complies, you can safely make this
+**self-enforcing** with an SCP or IAM condition on `ec2:RunInstances` (e.g.
+require `ec2:MetadataHttpTokens = required` and `ec2:Encrypted = true`) — those
+guardrails pass rather than blocking launches. Public IP is **not** set on
+`RunInstances`; it's inherited from the subnet's auto-assign setting, which this
+module controls via `assign_public_ip`.
+
 ## Access postures → variables
 
 Pick how users reach the boxes:
