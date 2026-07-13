@@ -14,7 +14,7 @@ and apply it with your own credentials; Starfolk never receives a key.
 
 - **Dedicated subnets** (one per `subnet_cidrs` entry) in your `vpc_id`, associated with a route table you already have (`route_table_id`) — we never create or mutate your VPC/IGW/NAT/routing.
 - **Security group** with posture-appropriate ingress.
-- **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account.
+- **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
 `terraform output -json` yields the values to send back to Starfolk.
@@ -55,6 +55,36 @@ reachability would need to be listed explicitly.
 ## How permissions / access work
 
 You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h) credentials. Revoke any time by removing the role. Every action lands in your CloudTrail. Starfolk only ever calls AWS API endpoints — it never connects *to* a box.
+
+## Instance role: own it yourself
+
+By default the module creates the `sfk-devbox` IAM role + instance profile (with
+just `AmazonSSMManagedInstanceCore`, so the SSM agent registers). You don't have
+to let it — two knobs give you control:
+
+- **Bring your own.** Set `create_instance_profile = false` and pass
+  `instance_profile_name` + `instance_role_arn`. The module then creates neither
+  the role nor the profile; the coordinator launches with your profile, and the
+  control role's `iam:PassRole` is pinned to exactly your `instance_role_arn`
+  (nothing else is passable). Your role must carry SSM permissions
+  (`AmazonSSMManagedInstanceCore` or equivalent) or the box never registers. Use
+  this to run a role you author end-to-end — e.g. one with your own
+  `DenyAnyAssumeRole` guardrail.
+- **Keep ours, add the guardrail.** If you'd rather the module keep owning the
+  role, set `deny_instance_role_assume_role = true` to attach a
+  `DenyAnyAssumeRole` guardrail (Deny `sts:AssumeRole` on `*`) to it. The devbox
+  never needs to assume another role, so this caps blast radius if a box is
+  compromised.
+
+```hcl
+# Bring your own devbox role/profile:
+create_instance_profile = false
+instance_profile_name   = "my-devbox-profile"
+instance_role_arn       = "arn:aws:iam::505307261329:role/my-devbox-role"
+
+# — or — keep the module-created role but harden it:
+deny_instance_role_assume_role = true
+```
 
 ## Instance launch configuration (IMDSv2 + EBS encryption)
 

@@ -32,6 +32,6 @@ output "security_group_id" {
 }
 
 output "instance_profile" {
-  value       = aws_iam_instance_profile.devbox.name
-  description = "The devbox instance profile name."
+  value       = local.instance_profile_name
+  description = "The devbox instance profile name (module-created, or your bring-your-own value)."
 }
