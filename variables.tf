@@ -106,14 +106,16 @@ variable "name_prefix" {
 
 variable "ami_kms_key_arns" {
   type        = list(string)
-  default     = ["arn:aws:kms:*:450410490644:key/*"]
+  default     = ["arn:aws:kms:us-east-2:450410490644:key/4bcb6251-1960-46ca-859e-3a5f24757caa"]
   description = <<-EOT
     KMS key ARN(s) the control role may use to launch a devbox AMI whose EBS
     snapshot is encrypted with a Starfolk-owned customer-managed key. The
     coordinator assumes the control role, so RunInstances must Decrypt the shared
-    snapshot and let EC2 create per-volume grants. Defaults to Starfolk's
-    AMI-encryption account; Starfolk can give you the exact key ARN to narrow it.
-    Set to [] if the AMI you launch is unencrypted (no KMS grant emitted).
+    snapshot and let EC2 create per-volume grants. Defaults to the exact
+    `alias/sfk-devbox-shared` CMK (us-east-2) — the single key every shared devbox
+    AMI is encrypted under; the grant is scoped to just this key, not a wildcard.
+    Override only if launching in another region (Starfolk supplies the
+    region-matched key ARN) or with an unencrypted AMI (set to [] — no KMS grant).
   EOT
 }
 
