@@ -125,6 +125,70 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   description       = "Allow all egress"
 }
 
+# ── Optional co-tenant isolation (network ACL) ───────────────────────────────
+# SGs protect the boxes on inbound but are allow-only, so they can't stop a box
+# from reaching a neighbor in the same VPC. A NACL is the one control that
+# supports DENY, so isolate_from_cidrs is enforced here: deny the listed CIDRs
+# (both directions, low rule numbers → evaluated first), allow everything else.
+# Created only when isolate_from_cidrs is non-empty; otherwise the subnets keep
+# the VPC default ACL (allow-all). Do NOT extend this to the whole VPC CIDR —
+# SSM interface endpoints and the VPC DNS resolver live in it (see the var doc).
+locals {
+  isolation_enabled = length(var.isolate_from_cidrs) > 0
+  # Stable per-CIDR rule numbers starting at 100 (well below the allow-all baseline).
+  isolation_rules = { for i, cidr in var.isolate_from_cidrs : tostring(i) => { num = 100 + i, cidr = cidr } }
+}
+
+resource "aws_network_acl" "isolation" {
+  count      = local.isolation_enabled ? 1 : 0
+  vpc_id     = var.vpc_id
+  subnet_ids = aws_subnet.this[*].id
+  tags       = merge(local.common_tags, { Name = "${var.name_prefix}-isolation" })
+}
+
+resource "aws_network_acl_rule" "deny_ingress" {
+  for_each       = local.isolation_enabled ? local.isolation_rules : {}
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = each.value.num
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "deny"
+  cidr_block     = each.value.cidr
+}
+
+resource "aws_network_acl_rule" "deny_egress" {
+  for_each       = local.isolation_enabled ? local.isolation_rules : {}
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = each.value.num
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "deny"
+  cidr_block     = each.value.cidr
+}
+
+# Allow-all baseline (evaluated after the denies). Both directions, protocol -1
+# — NACLs are stateless, so this single rule per direction carries return traffic
+# for everything not explicitly denied above.
+resource "aws_network_acl_rule" "allow_ingress" {
+  count          = local.isolation_enabled ? 1 : 0
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = 32000
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+}
+
+resource "aws_network_acl_rule" "allow_egress" {
+  count          = local.isolation_enabled ? 1 : 0
+  network_acl_id = aws_network_acl.isolation[0].id
+  rule_number    = 32000
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+}
+
 # ── Devbox instance profile (SSM agent registration) ────────────────────────
 # Created only when create_instance_profile = true (the default). Set it false
 # to bring your own profile/role (instance_profile_name + instance_role_arn) —

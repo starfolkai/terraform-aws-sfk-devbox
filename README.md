@@ -86,6 +86,40 @@ instance_role_arn       = "arn:aws:iam::505307261329:role/my-devbox-role"
 deny_instance_role_assume_role = true
 ```
 
+## Isolating boxes from co-tenant workloads
+
+The module deploys into your **existing** VPC, so the devbox subnets sit
+alongside whatever else you already run there. To wall the boxes off from a
+neighbor, know what each control can and can't do:
+
+- **A dedicated route table does *not* isolate them.** Every subnet has an
+  implicit `local` route to the whole VPC CIDR that can't be removed, so routing
+  can't stop intra-VPC reachability — it only steers *non-local* (internet,
+  peered, TGW) traffic.
+- **Security groups protect *inbound to the boxes*.** Our SG is default-deny
+  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), 7681 (to
+  `coordinator_ingress_cidrs`), and Nebula UDP, with no self-rule — so a neighbor
+  can't open connections *to* the boxes. (Exception: posture A's `["0.0.0.0/0"]`
+  on `ssh_ingress_cidrs` lets any in-VPC host reach 22/443; scope it if that
+  matters.) But the SG's egress is allow-all, so it does **not** stop the boxes
+  from reaching *out* to a neighbor — that's the neighbor's own SG's job.
+
+To fully wall the boxes off from specific neighbors in **both** directions, set
+`isolate_from_cidrs` to those workloads' CIDRs:
+
+```hcl
+isolate_from_cidrs = ["10.0.20.0/24", "10.0.21.0/24"]  # co-tenant subnets
+```
+
+The module then attaches a **network ACL** to the devbox subnets that denies
+those CIDRs inbound + outbound and allows everything else — the boxes keep full
+internet/DNS/SSM but can't reach, or be reached by, the listed workloads. We use
+a NACL (not an SG egress rule) because SGs are allow-only and can't express a
+deny; NACLs are stateless, so the module's allow-all baseline carries return
+traffic. **Don't** try to block the whole VPC CIDR this way — the boxes' in-VPC
+dependencies (SSM interface endpoints, the VPC DNS resolver) live in the VPC
+CIDR and would break; list only the specific neighbors.
+
 ## Instance launch configuration (IMDSv2 + EBS encryption)
 
 This module creates no instances and no launch template — the Starfolk

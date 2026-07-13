@@ -74,6 +74,30 @@ variable "coordinator_ingress_cidrs" {
   EOT
 }
 
+variable "isolate_from_cidrs" {
+  type        = list(string)
+  default     = []
+  description = <<-EOT
+    CIDR(s) of co-tenant workloads in the SAME VPC to fully isolate the devboxes
+    from, in BOTH directions. When non-empty, the module attaches a network ACL
+    to the dedicated devbox subnets that DENYs these CIDRs (inbound + outbound)
+    and allows everything else — so boxes keep full internet/DNS/SSM but cannot
+    reach, or be reached by, the listed workloads. Empty (default) leaves the
+    subnets on the VPC's default ACL (allow-all), relying on security groups
+    alone. We use a NACL rather than an SG egress rule because SGs are allow-only
+    and can't express a deny; NACLs are stateless, so the module's allow-all
+    baseline covers return traffic. Prefer a whole subnet/summary CIDR per
+    neighbor. (Do NOT try to block the whole VPC CIDR this way — the boxes'
+    in-VPC dependencies, SSM interface endpoints and the VPC DNS resolver, live
+    in the VPC CIDR and would break.)
+  EOT
+
+  validation {
+    condition     = length(var.isolate_from_cidrs) <= 18
+    error_message = "isolate_from_cidrs supports up to 18 CIDRs (AWS network ACL rule quota). Summarize into fewer CIDRs, or raise the account NACL rule quota and adjust."
+  }
+}
+
 variable "enable_nebula_ingress" {
   type        = bool
   default     = true
