@@ -107,8 +107,10 @@ resource "aws_vpc_security_group_ingress_rule" "ssh_webpty" {
 # directly, so it must be reachable from the coordinator's egress — and ONLY
 # from there (it's the full box control surface). Scoped to coordinator_ingress_cidrs,
 # which differs per coordinator deployment (prod vs dev vs a local devbox).
+# Gated on enable_web_sessions (default false): when off, 7681 is never opened
+# and boxes are reached over SSH / Nebula instead (SSM control is unaffected).
 resource "aws_vpc_security_group_ingress_rule" "coordinator" {
-  for_each          = local.coordinator_rules
+  for_each          = var.enable_web_sessions ? local.coordinator_rules : {}
   security_group_id = aws_security_group.this.id
   ip_protocol       = "tcp"
   from_port         = 7681

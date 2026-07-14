@@ -97,12 +97,13 @@ neighbor, know what each control can and can't do:
   can't stop intra-VPC reachability — it only steers *non-local* (internet,
   peered, TGW) traffic.
 - **Security groups protect *inbound to the boxes*.** Our SG is default-deny
-  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), 7681 (to
-  `coordinator_ingress_cidrs`), and Nebula UDP, with no self-rule — so a neighbor
-  can't open connections *to* the boxes. (Exception: posture A's `["0.0.0.0/0"]`
-  on `ssh_ingress_cidrs` lets any in-VPC host reach 22/443; scope it if that
-  matters.) But the SG's egress is allow-all, so it does **not** stop the boxes
-  from reaching *out* to a neighbor — that's the neighbor's own SG's job.
+  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), Nebula UDP, and — only
+  when `enable_web_sessions = true` — 7681 (to `coordinator_ingress_cidrs`), with
+  no self-rule, so a neighbor can't open connections *to* the boxes. (Exception:
+  posture A's `["0.0.0.0/0"]` on `ssh_ingress_cidrs` lets any in-VPC host reach
+  22/443; scope it if that matters.) But the SG's egress is allow-all, so it does
+  **not** stop the boxes from reaching *out* to a neighbor — that's the neighbor's
+  own SG's job.
 
 To fully wall the boxes off from specific neighbors in **both** directions, set
 `isolate_from_cidrs` to those workloads' CIDRs:
@@ -147,14 +148,57 @@ module controls via `assign_public_ip`.
 
 Pick how users reach the boxes:
 
-| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `route_table_id` | Notes |
-|---|---|---|---|---|
-| **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. |
-| **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
-| **B** — private, your VPN → private IP | `false` | `["<vpc-or-vpn-cidr>"]` | NAT-routed | No public IP; reach the private IP over your VPN (contact Starfolk to enable). |
-| **C** — private, Nebula overlay | `false` | `[]` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. |
+| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `enable_web_sessions` | `route_table_id` | Notes |
+|---|---|---|---|---|---|
+| **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Set `enable_web_sessions = true` for the browser terminal. |
+| **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
+| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. **The supported private path today** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
+| **B** — private, VPN → raw private IP | `false` | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed | Direct to the box's VPC private IP over a site-to-site VPN, **no overlay**. Not wired into the coordinator yet (it addresses boxes by public IP / overlay only) — contact Starfolk. |
+
+`enable_web_sessions` (default `false`) opens TCP 7681 so the coordinator can serve the browser terminal — only usable on a public posture where the coordinator can route to the box's IP. With it off, boxes are reached over SSH (22) or Nebula; the coordinator still manages them over SSM either way.
 
 `enable_nebula_ingress` (default `true`) opens UDP 51820; harmless for postures that don't use the overlay.
+
+## Reaching boxes without a public IP
+
+Set `assign_public_ip = false` and the boxes get **no public IP** — the strict
+`route_table_id` becomes NAT-routed and `enable_web_sessions` should stay `false`.
+SSM control is unaffected (the coordinator drives boxes over the AWS SSM API, with
+no inbound path to the box), so a private box still provisions and is managed
+end-to-end. The question is how you *reach a shell* on it, and how it's addressed.
+
+### How the coordinator addresses a box (and where DNS points)
+
+The coordinator learns a box's IPs from EC2 `DescribeInstances` during its
+warm-pool reconcile — it reads **both** `PublicIpAddress` and `PrivateIpAddress`
+and stores them on the instance row. **Today it only ever *uses* the public IP:**
+the browser terminal, coordinator-proxied connect, and the job harness all require
+it. The friendly name `<alias>.box.starfolk.ai` is published to either the box's
+**Nebula overlay IP** (private postures) or its public IP (a separate `-pub`
+record) — the stored `private_ip` is kept for observability and is **not** used for
+addressing or DNS.
+
+So the supported no-public-IP path today is the **Nebula overlay (posture C)**, not
+the raw VPC private IP:
+
+- Leave `enable_nebula_ingress = true` (opens UDP 51820, CA-authenticated) and
+  `assign_public_ip = false`. No 22/443 ingress is needed — the overlay rides
+  `nebula0`.
+- Run `sfk setup tunnel` to join the overlay; `<alias>.box.starfolk.ai` resolves to
+  the box's **overlay IP**, and traffic is carried over the tunnel.
+
+**Plain VPN-to-private-IP (posture B) — reaching the box's VPC private IP directly
+over a site-to-site VPN, without the overlay — is not wired into the coordinator
+yet.** Nothing addresses a box by its `private_ip`, and the coordinator-side
+features hard-require a public IP, so this needs coordinator work (use `private_ip`
+when there's no public IP, publish/resolve it, and give the coordinator a route to
+it), not just a Terraform toggle. If you need direct-private-IP access rather than
+the overlay, tell Starfolk and we'll scope it; until then the overlay is the
+private path.
+
+For a POC, option 1 is the least-effort path and needs nothing from you. If you
+require that no internal addresses appear in public DNS, tell Starfolk and we'll
+set up option 2.
 
 ## Usage
 
