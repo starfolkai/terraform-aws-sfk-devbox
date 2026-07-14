@@ -97,12 +97,13 @@ neighbor, know what each control can and can't do:
   can't stop intra-VPC reachability — it only steers *non-local* (internet,
   peered, TGW) traffic.
 - **Security groups protect *inbound to the boxes*.** Our SG is default-deny
-  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), 7681 (to
-  `coordinator_ingress_cidrs`), and Nebula UDP, with no self-rule — so a neighbor
-  can't open connections *to* the boxes. (Exception: posture A's `["0.0.0.0/0"]`
-  on `ssh_ingress_cidrs` lets any in-VPC host reach 22/443; scope it if that
-  matters.) But the SG's egress is allow-all, so it does **not** stop the boxes
-  from reaching *out* to a neighbor — that's the neighbor's own SG's job.
+  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), Nebula UDP, and — only
+  when `enable_web_sessions = true` — 7681 (to `coordinator_ingress_cidrs`), with
+  no self-rule, so a neighbor can't open connections *to* the boxes. (Exception:
+  posture A's `["0.0.0.0/0"]` on `ssh_ingress_cidrs` lets any in-VPC host reach
+  22/443; scope it if that matters.) But the SG's egress is allow-all, so it does
+  **not** stop the boxes from reaching *out* to a neighbor — that's the neighbor's
+  own SG's job.
 
 To fully wall the boxes off from specific neighbors in **both** directions, set
 `isolate_from_cidrs` to those workloads' CIDRs:
@@ -147,14 +148,49 @@ module controls via `assign_public_ip`.
 
 Pick how users reach the boxes:
 
-| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `route_table_id` | Notes |
-|---|---|---|---|---|
-| **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. |
-| **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
-| **B** — private, your VPN → private IP | `false` | `["<vpc-or-vpn-cidr>"]` | NAT-routed | No public IP; reach the private IP over your VPN (contact Starfolk to enable). |
-| **C** — private, Nebula overlay | `false` | `[]` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. |
+| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `enable_web_sessions` | `route_table_id` | Notes |
+|---|---|---|---|---|---|
+| **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Set `enable_web_sessions = true` for the browser terminal. |
+| **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
+| **B** — private, your VPN → private IP | `false` | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed | No public IP; reach the private IP over your VPN. Web sessions off (the coordinator isn't on your VPN). See [Reaching boxes over a VPN](#reaching-boxes-over-a-vpn-no-public-ip). |
+| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. |
+
+`enable_web_sessions` (default `false`) opens TCP 7681 so the coordinator can serve the browser terminal — only usable on a public posture where the coordinator can route to the box's IP. With it off, boxes are reached over SSH (22) or Nebula; the coordinator still manages them over SSM either way.
 
 `enable_nebula_ingress` (default `true`) opens UDP 51820; harmless for postures that don't use the overlay.
+
+## Reaching boxes over a VPN (no public IP)
+
+For a fully private posture (**B**), set `assign_public_ip = false`, point
+`route_table_id` at a NAT-routed table, and scope `ssh_ingress_cidrs` to your VPN
+CIDR. Boxes then get **no public IP** and are reachable only from inside the VPC
+or over your VPN, on SSH (22). Leave `enable_web_sessions = false`: the browser
+terminal needs the coordinator to dial the box on 7681, and the coordinator isn't
+on your VPN — so web sessions don't apply to a private box. Management still works
+end-to-end because the coordinator drives boxes over **SSM** (AWS API, no inbound
+path to the box), independent of public IP.
+
+### How DNS works in this posture
+
+The module doesn't manage any DNS — box aliases are assigned dynamically by the
+coordinator at session time — so name resolution for a private box is one of:
+
+1. **Starfolk's public zone holds the private IP.** The coordinator publishes
+   `<alias>.box.starfolk.ai` as an A record pointing at the box's **private** IP.
+   That record resolves from anywhere (it's public DNS), but the address only
+   *routes* when you're on the VPN. Simplest, no customer DNS work — the only
+   caveat is that an RFC1918 address appears in public DNS (usually fine).
+2. **Your own DNS / a Route 53 private hosted zone.** Your VPN's DNS servers, or a
+   private hosted zone associated with the VPC (reachable from your VPN via a
+   Route 53 Resolver inbound endpoint), resolve box names to their private IPs.
+   Keeps everything private; requires the box addresses be published there
+   (a coordinator-side integration Starfolk would enable per customer).
+3. **Connect by IP.** Skip names entirely — SSH to the private IP over the VPN, or
+   `sfk session connect` by IP.
+
+For a POC, option 1 is the least-effort path and needs nothing from you. If you
+require that no internal addresses appear in public DNS, tell Starfolk and we'll
+set up option 2.
 
 ## Usage
 
