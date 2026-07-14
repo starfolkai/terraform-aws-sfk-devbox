@@ -152,41 +152,49 @@ Pick how users reach the boxes:
 |---|---|---|---|---|---|
 | **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Set `enable_web_sessions = true` for the browser terminal. |
 | **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
-| **B** — private, your VPN → private IP | `false` | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed | No public IP; reach the private IP over your VPN. Web sessions off (the coordinator isn't on your VPN). See [Reaching boxes over a VPN](#reaching-boxes-over-a-vpn-no-public-ip). |
-| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. |
+| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. **The supported private path today** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
+| **B** — private, VPN → raw private IP | `false` | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed | Direct to the box's VPC private IP over a site-to-site VPN, **no overlay**. Not wired into the coordinator yet (it addresses boxes by public IP / overlay only) — contact Starfolk. |
 
 `enable_web_sessions` (default `false`) opens TCP 7681 so the coordinator can serve the browser terminal — only usable on a public posture where the coordinator can route to the box's IP. With it off, boxes are reached over SSH (22) or Nebula; the coordinator still manages them over SSM either way.
 
 `enable_nebula_ingress` (default `true`) opens UDP 51820; harmless for postures that don't use the overlay.
 
-## Reaching boxes over a VPN (no public IP)
+## Reaching boxes without a public IP
 
-For a fully private posture (**B**), set `assign_public_ip = false`, point
-`route_table_id` at a NAT-routed table, and scope `ssh_ingress_cidrs` to your VPN
-CIDR. Boxes then get **no public IP** and are reachable only from inside the VPC
-or over your VPN, on SSH (22). Leave `enable_web_sessions = false`: the browser
-terminal needs the coordinator to dial the box on 7681, and the coordinator isn't
-on your VPN — so web sessions don't apply to a private box. Management still works
-end-to-end because the coordinator drives boxes over **SSM** (AWS API, no inbound
-path to the box), independent of public IP.
+Set `assign_public_ip = false` and the boxes get **no public IP** — the strict
+`route_table_id` becomes NAT-routed and `enable_web_sessions` should stay `false`.
+SSM control is unaffected (the coordinator drives boxes over the AWS SSM API, with
+no inbound path to the box), so a private box still provisions and is managed
+end-to-end. The question is how you *reach a shell* on it, and how it's addressed.
 
-### How DNS works in this posture
+### How the coordinator addresses a box (and where DNS points)
 
-The module doesn't manage any DNS — box aliases are assigned dynamically by the
-coordinator at session time — so name resolution for a private box is one of:
+The coordinator learns a box's IPs from EC2 `DescribeInstances` during its
+warm-pool reconcile — it reads **both** `PublicIpAddress` and `PrivateIpAddress`
+and stores them on the instance row. **Today it only ever *uses* the public IP:**
+the browser terminal, coordinator-proxied connect, and the job harness all require
+it. The friendly name `<alias>.box.starfolk.ai` is published to either the box's
+**Nebula overlay IP** (private postures) or its public IP (a separate `-pub`
+record) — the stored `private_ip` is kept for observability and is **not** used for
+addressing or DNS.
 
-1. **Starfolk's public zone holds the private IP.** The coordinator publishes
-   `<alias>.box.starfolk.ai` as an A record pointing at the box's **private** IP.
-   That record resolves from anywhere (it's public DNS), but the address only
-   *routes* when you're on the VPN. Simplest, no customer DNS work — the only
-   caveat is that an RFC1918 address appears in public DNS (usually fine).
-2. **Your own DNS / a Route 53 private hosted zone.** Your VPN's DNS servers, or a
-   private hosted zone associated with the VPC (reachable from your VPN via a
-   Route 53 Resolver inbound endpoint), resolve box names to their private IPs.
-   Keeps everything private; requires the box addresses be published there
-   (a coordinator-side integration Starfolk would enable per customer).
-3. **Connect by IP.** Skip names entirely — SSH to the private IP over the VPN, or
-   `sfk session connect` by IP.
+So the supported no-public-IP path today is the **Nebula overlay (posture C)**, not
+the raw VPC private IP:
+
+- Leave `enable_nebula_ingress = true` (opens UDP 51820, CA-authenticated) and
+  `assign_public_ip = false`. No 22/443 ingress is needed — the overlay rides
+  `nebula0`.
+- Run `sfk setup tunnel` to join the overlay; `<alias>.box.starfolk.ai` resolves to
+  the box's **overlay IP**, and traffic is carried over the tunnel.
+
+**Plain VPN-to-private-IP (posture B) — reaching the box's VPC private IP directly
+over a site-to-site VPN, without the overlay — is not wired into the coordinator
+yet.** Nothing addresses a box by its `private_ip`, and the coordinator-side
+features hard-require a public IP, so this needs coordinator work (use `private_ip`
+when there's no public IP, publish/resolve it, and give the coordinator a route to
+it), not just a Terraform toggle. If you need direct-private-IP access rather than
+the overlay, tell Starfolk and we'll scope it; until then the overlay is the
+private path.
 
 For a POC, option 1 is the least-effort path and needs nothing from you. If you
 require that no internal addresses appear in public DNS, tell Starfolk and we'll
