@@ -14,7 +14,7 @@ output "access_mode" {
   # sets assign_public_ip=false but is addressed via the overlay, not the private
   # IP — if you use the overlay rather than a VPN, tell Starfolk to register it
   # differently.) Register the cloud account with this access_mode.
-  value       = var.assign_public_ip ? "public" : "vpn_private"
+  value       = local.access_mode
   description = "How boxes here are reached: 'public' (public IP) or 'vpn_private' (no public IP, private IP over your VPN). Register the cloud account with this value."
 }
 
@@ -34,7 +34,7 @@ output "external_id" {
 }
 
 output "subnet_ids" {
-  value       = aws_subnet.this[*].id
+  value       = local.subnet_ids_effective
   description = "The dedicated SFK devbox subnet IDs."
 }
 
