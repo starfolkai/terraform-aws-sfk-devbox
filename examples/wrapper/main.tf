@@ -63,6 +63,7 @@ module "sfk_byoc" {
 output "sfk_handback" {
   value = {
     account_id        = module.sfk_byoc.account_id
+    access_mode       = module.sfk_byoc.access_mode
     region            = module.sfk_byoc.region
     role_arn          = module.sfk_byoc.role_arn
     external_id       = module.sfk_byoc.external_id

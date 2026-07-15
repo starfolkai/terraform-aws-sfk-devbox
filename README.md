@@ -226,6 +226,7 @@ module "sfk_byoc" {
 output "sfk_handback" {
   value = {
     account_id        = module.sfk_byoc.account_id
+    access_mode       = module.sfk_byoc.access_mode  # "public" | "vpn_private", from assign_public_ip
     region            = module.sfk_byoc.region
     role_arn          = module.sfk_byoc.role_arn
     external_id       = module.sfk_byoc.external_id
@@ -235,6 +236,8 @@ output "sfk_handback" {
   }
 }
 ```
+
+The `access_mode` output is derived from `assign_public_ip` (`public` when boxes get public IPs, `vpn_private` when they don't) — it tells Starfolk how to register the account so the coordinator addresses boxes correctly (public IP vs. private-IP-over-VPN). Send it back with the rest.
 
 `terraform init && terraform plan` → review with your security team → `terraform apply`, then send the `sfk_handback` output to Starfolk.
 

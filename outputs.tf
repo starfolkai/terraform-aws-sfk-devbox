@@ -1,9 +1,21 @@
-# The seven values to hand back to Starfolk (they land in the workspace's
+# The values to hand back to Starfolk (they land in the workspace's
 # cloud_accounts row). `terraform output -json` gives a clean payload.
 
 output "account_id" {
   value       = local.account_id
   description = "Customer AWS account ID."
+}
+
+output "access_mode" {
+  # Derived from assign_public_ip so the handback tells Starfolk how boxes here
+  # are reached — no guessing at registration time. "public" = subnets auto-assign
+  # public IPs (posture A/A-VPN); "vpn_private" = no public IP, boxes reached by
+  # their private VPC IP over your VPN (posture B). (Nebula-overlay posture C also
+  # sets assign_public_ip=false but is addressed via the overlay, not the private
+  # IP — if you use the overlay rather than a VPN, tell Starfolk to register it
+  # differently.) Register the cloud account with this access_mode.
+  value       = var.assign_public_ip ? "public" : "vpn_private"
+  description = "How boxes here are reached: 'public' (public IP) or 'vpn_private' (no public IP, private IP over your VPN). Register the cloud account with this value."
 }
 
 output "region" {
