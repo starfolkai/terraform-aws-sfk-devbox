@@ -17,7 +17,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.7"
+          terraform_version: "1.10.5"
 
       - name: terraform fmt
         run: terraform fmt -check -recursive -diff
@@ -37,9 +37,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned to the required_version floor in versions.tf so CI proves the
+      # module works at the minimum Terraform we claim to support.
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.7"
+          terraform_version: "1.10.5"
 
       - name: terraform init
         working-directory: ${{ matrix.dir }}

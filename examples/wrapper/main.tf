@@ -13,7 +13,7 @@
 # branch for something that creates IAM roles in your account.
 
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.10"
 
   # ── YOUR state backend. This is the "bring your own storage" part — replace
   #    the whole block with whatever your team already uses (S3, GCS, Terraform
