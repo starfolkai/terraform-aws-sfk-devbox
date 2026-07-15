@@ -43,9 +43,13 @@ With `subnet_ids`, if those subnets don't auto-assign public IPs (i.e. private
 subnets), the hand-back's `access_mode` is emitted as **`vpn_private`**
 automatically, so the coordinator addresses boxes by their private IP over your
 VPN (see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip)).
-Note: `isolate_from_cidrs` (the NACL feature) is unavailable with `subnet_ids` — a
-subnet has one ACL and attaching ours would disrupt other workloads in your shared
-subnet; it requires module-created (dedicated) subnets.
+
+`isolate_from_cidrs` **works with `subnet_ids`**, but only if the subnets you pass
+are **dedicated to SFK boxes** — the module attaches its NACL to those subnets,
+which *replaces* their current ACL (a subnet has exactly one). If those subnets
+also host other workloads, the isolation would apply to them too, so use dedicated
+subnets (or leave `isolate_from_cidrs` unset and isolate via your own SGs — the
+boxes carry the `sfk-devbox-sg` security group you can reference).
 
 ## Bring your own state & settings
 

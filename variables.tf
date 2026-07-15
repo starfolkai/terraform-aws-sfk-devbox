@@ -28,9 +28,9 @@ variable "subnet_ids" {
     (your subnets' own setting governs). For a private subnet (no public IP) the
     hand-back's access_mode is emitted as "vpn_private" automatically — the
     coordinator then addresses boxes by their private IP over your VPN.
-    NOTE: isolate_from_cidrs (the NACL feature) is unavailable with subnet_ids —
-    a subnet has one ACL and attaching ours would disrupt other workloads in your
-    shared subnet.
+    NOTE: if you also set isolate_from_cidrs, the module attaches its NACL to
+    these subnets, REPLACING their current ACL — so the subnets you pass must be
+    DEDICATED to SFK boxes (no other workloads), or the isolation affects them too.
   EOT
 }
 
@@ -142,14 +142,6 @@ variable "isolate_from_cidrs" {
   validation {
     condition     = length(var.isolate_from_cidrs) <= 18
     error_message = "isolate_from_cidrs supports up to 18 CIDRs (AWS network ACL rule quota). Summarize into fewer CIDRs, or raise the account NACL rule quota and adjust."
-  }
-
-  validation {
-    # A subnet has exactly one network ACL; attaching ours to a subnet you
-    # brought (shared with other workloads) would replace its ACL. Only allowed
-    # on module-created (dedicated) subnets.
-    condition     = length(var.isolate_from_cidrs) == 0 || length(var.subnet_ids) == 0
-    error_message = "isolate_from_cidrs requires module-created subnets (subnet_cidrs); it can't be used with subnet_ids (bring-your-own) — attaching a NACL would disrupt other workloads in your existing subnet."
   }
 }
 

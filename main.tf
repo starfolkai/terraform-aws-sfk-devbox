@@ -171,9 +171,12 @@ locals {
 }
 
 resource "aws_network_acl" "isolation" {
-  count      = local.isolation_enabled ? 1 : 0
-  vpc_id     = var.vpc_id
-  subnet_ids = aws_subnet.this[*].id
+  count  = local.isolation_enabled ? 1 : 0
+  vpc_id = var.vpc_id
+  # Attach to whichever subnets the boxes use — created or bring-your-own. For
+  # BYO subnets this REPLACES the subnet's current ACL, so those subnets must be
+  # dedicated to SFK boxes (see the isolate_from_cidrs var doc).
+  subnet_ids = local.subnet_ids_effective
   tags       = merge(local.common_tags, { Name = "${var.name_prefix}-isolation" })
 }
 
