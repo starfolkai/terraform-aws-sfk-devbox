@@ -157,6 +157,30 @@ traffic. **Don't** try to block the whole VPC CIDR this way — the boxes' in-VP
 dependencies (SSM interface endpoints, the VPC DNS resolver) live in the VPC
 CIDR and would break; list only the specific neighbors.
 
+### Dedicated vs shared subnets — which isolation tool
+
+`isolate_from_cidrs` uses a **subnet-level** NACL, so it's only safe when the
+boxes are on subnets **dedicated to SFK** (created via `subnet_cidrs`, or
+bring-your-own subnets that host nothing else). On a subnet **shared** with other
+workloads it would apply to those workloads too — so don't use it there.
+
+**To isolate boxes on a shared subnet, use security groups (both directions) —
+no NACL, no dedicated subnet:**
+
+- **Inbound (neighbor → boxes):** already covered by `sfk-devbox-sg` (default-deny
+  inbound). Scope `ssh_ingress_cidrs` to your VPN/admin CIDR only (not the VPC or
+  the shared subnet), and set `enable_web_sessions=false` / `enable_nebula_ingress=false`
+  for a private posture — then a co-tenant in the same subnet has no open port to
+  the boxes.
+- **Outbound (boxes → neighbor):** enforced on **your** side. Your neighbor
+  workloads' SGs are default-deny inbound, so the boxes can't reach them unless
+  you explicitly allow `sfk-devbox-sg`. Just don't add it to their allow-lists.
+  The `security_group_id` is in the hand-back for exactly this SG-to-SG reference.
+
+That SG-to-SG pattern is the standard way to isolate co-located workloads in a
+shared subnet — so co-locating on your existing private subnets is fine and needs
+no VPC change.
+
 ## Instance launch configuration (IMDSv2 + EBS encryption)
 
 This module creates no instances and no launch template — the Starfolk
