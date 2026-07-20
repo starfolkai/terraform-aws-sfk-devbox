@@ -7,6 +7,26 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# Bring-your-own subnets: when subnet_ids is set the module attaches to these
+# existing subnets instead of creating new ones. We read them to (a) derive the
+# access_mode hint from their real auto-assign-public-IP setting and (b) build
+# their ARNs for the RunInstances least-privilege pin. No-op when subnet_ids is
+# empty (the module creates subnets from subnet_cidrs instead).
+data "aws_subnet" "byo" {
+  for_each = toset(var.subnet_ids)
+  id       = each.value
+
+  lifecycle {
+    postcondition {
+      # Catch a wrong-VPC subnet id at plan time with a clear message, rather
+      # than an opaque RunInstances/SG-mismatch failure at launch. The SG (and
+      # any created resources) live in var.vpc_id, so every BYO subnet must too.
+      condition     = self.vpc_id == var.vpc_id
+      error_message = "subnet_ids entry ${self.id} is in VPC ${self.vpc_id}, not vpc_id (${var.vpc_id})."
+    }
+  }
+}
+
 resource "random_uuid" "external_id" {}
 
 locals {
@@ -27,11 +47,30 @@ locals {
   instance_profile_name = var.create_instance_profile ? aws_iam_instance_profile.devbox[0].name : var.instance_profile_name
   instance_role_arn     = var.create_instance_profile ? aws_iam_role.devbox[0].arn : var.instance_role_arn
 
+  # Subnets the boxes launch into: the ones we create (subnet_cidrs), or the
+  # existing ones you pass (subnet_ids). Exactly one is set (see the variable
+  # validations). ``subnet_arns`` feeds the RunInstances least-privilege pin —
+  # for BYO subnets we build the ARNs from the ids (no create to read .arn off).
+  create_subnets       = length(var.subnet_ids) == 0
+  subnet_ids_effective = local.create_subnets ? aws_subnet.this[*].id : var.subnet_ids
+  subnet_arns = local.create_subnets ? aws_subnet.this[*].arn : [
+    for id in var.subnet_ids : "arn:aws:ec2:${local.region}:${local.account_id}:subnet/${id}"
+  ]
+
+  # access_mode hint emitted in the hand-back (maps to cloud_accounts.access_mode).
+  # Created subnets → declared via assign_public_ip. BYO subnets → read from the
+  # subnets' *actual* map_public_ip_on_launch, so a private subnet correctly
+  # yields "vpn_private" with no extra flag for the customer to remember.
+  boxes_get_public_ip = local.create_subnets ? var.assign_public_ip : anytrue([
+    for s in data.aws_subnet.byo : s.map_public_ip_on_launch
+  ])
+  access_mode = local.boxes_get_public_ip ? "public" : "vpn_private"
+
   # ── Least-privilege pinning ──
   # RunInstances is pinned to the exact subnet + SG we create; PassRole to the
   # devbox instance-profile role; SendCommand tag-scoped to SFK-managed boxes.
   run_instances_resources = concat(
-    aws_subnet.this[*].arn,
+    local.subnet_arns,
     [
       aws_security_group.this.arn,
       "arn:aws:ec2:*:*:image/*",
@@ -142,9 +181,12 @@ locals {
 }
 
 resource "aws_network_acl" "isolation" {
-  count      = local.isolation_enabled ? 1 : 0
-  vpc_id     = var.vpc_id
-  subnet_ids = aws_subnet.this[*].id
+  count  = local.isolation_enabled ? 1 : 0
+  vpc_id = var.vpc_id
+  # Attach to whichever subnets the boxes use — created or bring-your-own. For
+  # BYO subnets this REPLACES the subnet's current ACL, so those subnets must be
+  # dedicated to SFK boxes (see the isolate_from_cidrs var doc).
+  subnet_ids = local.subnet_ids_effective
   tags       = merge(local.common_tags, { Name = "${var.name_prefix}-isolation" })
 }
 

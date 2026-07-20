@@ -12,12 +12,44 @@ and apply it with your own credentials; Starfolk never receives a key.
 
 ## What it creates
 
-- **Dedicated subnets** (one per `subnet_cidrs` entry) in your `vpc_id`, associated with a route table you already have (`route_table_id`) — we never create or mutate your VPC/IGW/NAT/routing.
+- **Subnets** — *either* dedicated ones the module creates (one per `subnet_cidrs` entry) in your `vpc_id`, associated with a route table you already have (`route_table_id`); *or* your **existing** subnets when you set `subnet_ids` (nothing is created). Either way we never create or mutate your VPC/IGW/NAT/routing. See [Subnets: create or bring your own](#subnets-create-or-bring-your-own).
 - **Security group** with posture-appropriate ingress.
 - **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
 `terraform output -json` yields the values to send back to Starfolk.
+
+## Subnets: create or bring your own
+
+Set **exactly one** of:
+
+- **`subnet_cidrs`** — the module **creates** dedicated subnets from free space in
+  your VPC (one per entry, one per AZ) and associates them with `route_table_id`.
+  Best when you have spare CIDR space and want isolated, module-owned subnets.
+- **`subnet_ids`** — the module attaches to **existing** subnets you pass. It
+  creates no subnets, associates no route table (yours already route), and doesn't
+  touch `map_public_ip_on_launch` (your subnet's own setting governs). Use this
+  when your VPC has no spare CIDR space, or you want boxes in your existing private
+  subnets. Hand us the subnet IDs.
+
+```hcl
+# Bring your own existing private subnets:
+subnet_ids     = ["subnet-0aaa", "subnet-0bbb", "subnet-0ccc"]
+route_table_id = null   # not needed — your subnets already route
+# (omit subnet_cidrs / assign_public_ip — the subnets' own config governs)
+```
+
+With `subnet_ids`, if those subnets don't auto-assign public IPs (i.e. private
+subnets), the hand-back's `access_mode` is emitted as **`vpn_private`**
+automatically, so the coordinator addresses boxes by their private IP over your
+VPN (see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip)).
+
+`isolate_from_cidrs` **works with `subnet_ids`**, but only if the subnets you pass
+are **dedicated to SFK boxes** — the module attaches its NACL to those subnets,
+which *replaces* their current ACL (a subnet has exactly one). If those subnets
+also host other workloads, the isolation would apply to them too, so use dedicated
+subnets (or leave `isolate_from_cidrs` unset and isolate via your own SGs — the
+boxes carry the `sfk-devbox-sg` security group you can reference).
 
 ## Bring your own state & settings
 
@@ -30,6 +62,10 @@ copy-paste starting point: your S3 backend, your `provider "aws"`, a pinned
 your own repo, adjust it, and apply.
 
 ## Route table requirements
+
+(Applies only when the module **creates** subnets via `subnet_cidrs`. With
+`subnet_ids` you bring existing subnets that already route, so `route_table_id` is
+not used.)
 
 We associate the dedicated subnets with the `route_table_id` you pass — we don't
 create or modify a route table. That table **must** provide:
@@ -121,6 +157,30 @@ traffic. **Don't** try to block the whole VPC CIDR this way — the boxes' in-VP
 dependencies (SSM interface endpoints, the VPC DNS resolver) live in the VPC
 CIDR and would break; list only the specific neighbors.
 
+### Dedicated vs shared subnets — which isolation tool
+
+`isolate_from_cidrs` uses a **subnet-level** NACL, so it's only safe when the
+boxes are on subnets **dedicated to SFK** (created via `subnet_cidrs`, or
+bring-your-own subnets that host nothing else). On a subnet **shared** with other
+workloads it would apply to those workloads too — so don't use it there.
+
+**To isolate boxes on a shared subnet, use security groups (both directions) —
+no NACL, no dedicated subnet:**
+
+- **Inbound (neighbor → boxes):** already covered by `sfk-devbox-sg` (default-deny
+  inbound). Scope `ssh_ingress_cidrs` to your VPN/admin CIDR only (not the VPC or
+  the shared subnet), and set `enable_web_sessions=false` / `enable_nebula_ingress=false`
+  for a private posture — then a co-tenant in the same subnet has no open port to
+  the boxes.
+- **Outbound (boxes → neighbor):** enforced on **your** side. Your neighbor
+  workloads' SGs are default-deny inbound, so the boxes can't reach them unless
+  you explicitly allow `sfk-devbox-sg`. Just don't add it to their allow-lists.
+  The `security_group_id` is in the hand-back for exactly this SG-to-SG reference.
+
+That SG-to-SG pattern is the standard way to isolate co-located workloads in a
+shared subnet — so co-locating on your existing private subnets is fine and needs
+no VPC change.
+
 ## Instance launch configuration (IMDSv2 + EBS encryption)
 
 This module creates no instances and no launch template — the Starfolk
@@ -152,8 +212,8 @@ Pick how users reach the boxes:
 |---|---|---|---|---|---|
 | **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Set `enable_web_sessions = true` for the browser terminal. |
 | **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
-| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. **The supported private path today** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
-| **B** — private, VPN → raw private IP | `false` | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed | Direct to the box's VPC private IP over a site-to-site VPN, **no overlay**. Not wired into the coordinator yet (it addresses boxes by public IP / overlay only) — contact Starfolk. |
+| **B** — private, VPN → private IP | `false` (or `subnet_ids` = your private subnets) | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed (or omit with `subnet_ids`) | No public IP; the coordinator addresses the box by its **private VPC IP** over your VPN when the account is registered `access_mode = vpn_private`. **Supported** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
+| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. Alternative to posture B if you'd rather not route to the private IP yourself. |
 
 `enable_web_sessions` (default `false`) opens TCP 7681 so the coordinator can serve the browser terminal — only usable on a public posture where the coordinator can route to the box's IP. With it off, boxes are reached over SSH (22) or Nebula; the coordinator still manages them over SSM either way.
 
@@ -170,35 +230,31 @@ end-to-end. The question is how you *reach a shell* on it, and how it's addresse
 ### How the coordinator addresses a box (and where DNS points)
 
 The coordinator learns a box's IPs from EC2 `DescribeInstances` during its
-warm-pool reconcile — it reads **both** `PublicIpAddress` and `PrivateIpAddress`
-and stores them on the instance row. **Today it only ever *uses* the public IP:**
-the browser terminal, coordinator-proxied connect, and the job harness all require
-it. The friendly name `<alias>.box.starfolk.ai` is published to either the box's
-**Nebula overlay IP** (private postures) or its public IP (a separate `-pub`
-record) — the stored `private_ip` is kept for observability and is **not** used for
-addressing or DNS.
+warm-pool reconcile — it reads both `PublicIpAddress` and `PrivateIpAddress`. How
+it *addresses* the box is set by the cloud account's `access_mode`:
 
-So the supported no-public-IP path today is the **Nebula overlay (posture C)**, not
-the raw VPC private IP:
+- **`public`** (default) — the box's **public IP**: handed to `sfk devbox connect`,
+  published as the friendly DNS record, and dialed for the browser terminal.
+- **`vpn_private`** — the box's **private VPC IP**: the reconciler stores it as the
+  box's reachable address, hands *it* to `sfk devbox connect`, and publishes it as
+  the friendly DNS record. You reach the box by that private IP **over your VPN** —
+  no Nebula, no public IP. (The browser web terminal doesn't apply here: the
+  coordinator isn't on your VPN, so `enable_web_sessions` stays `false` and
+  interactive access is SSH over the VPN. Control still runs over SSM, IP-independent.)
 
-- Leave `enable_nebula_ingress = true` (opens UDP 51820, CA-authenticated) and
-  `assign_public_ip = false`. No 22/443 ingress is needed — the overlay rides
-  `nebula0`.
-- Run `sfk setup tunnel` to join the overlay; `<alias>.box.starfolk.ai` resolves to
-  the box's **overlay IP**, and traffic is carried over the tunnel.
+So there are **two** no-public-IP paths — pick one:
 
-**Plain VPN-to-private-IP (posture B) — reaching the box's VPC private IP directly
-over a site-to-site VPN, without the overlay — is not wired into the coordinator
-yet.** Nothing addresses a box by its `private_ip`, and the coordinator-side
-features hard-require a public IP, so this needs coordinator work (use `private_ip`
-when there's no public IP, publish/resolve it, and give the coordinator a route to
-it), not just a Terraform toggle. If you need direct-private-IP access rather than
-the overlay, tell Starfolk and we'll scope it; until then the overlay is the
-private path.
-
-For a POC, option 1 is the least-effort path and needs nothing from you. If you
-require that no internal addresses appear in public DNS, tell Starfolk and we'll
-set up option 2.
+1. **VPN → private IP (posture B)** — recommended if you already reach private
+   resources over a VPN. Give the boxes no public IP (either `assign_public_ip =
+   false` on module-created subnets, or point `subnet_ids` at your existing private
+   subnets), scope `ssh_ingress_cidrs` to your VPN CIDR, and register the account
+   `access_mode = vpn_private`. The hand-back emits that `access_mode` automatically
+   (from the subnet's auto-assign-public-IP setting), so you just paste it in. Your
+   VPN must route to the subnets' CIDR.
+2. **Nebula overlay (posture C)** — if you'd rather not route to the private IP
+   yourself. Leave `enable_nebula_ingress = true` + `assign_public_ip = false`, run
+   `sfk setup tunnel`; `<alias>.box.starfolk.ai` resolves to the box's overlay IP
+   and traffic rides `nebula0` (no 22/443 ingress needed).
 
 ## Usage
 

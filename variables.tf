@@ -5,12 +5,33 @@ variable "vpc_id" {
 
 variable "subnet_cidrs" {
   type        = list(string)
-  description = "One CIDR per AZ for the dedicated SFK devbox subnets, chosen from free space in your VPC. One subnet is created per entry."
+  default     = []
+  description = "One CIDR per AZ for dedicated SFK devbox subnets the module CREATES, chosen from free space in your VPC (one subnet per entry). Leave empty and set subnet_ids instead to attach boxes to EXISTING subnets. Set exactly one of subnet_cidrs / subnet_ids."
 
   validation {
-    condition     = length(var.subnet_cidrs) >= 1
-    error_message = "Provide at least one subnet CIDR."
+    # Exactly one of subnet_cidrs (create) or subnet_ids (bring-your-own).
+    condition     = (length(var.subnet_cidrs) > 0) != (length(var.subnet_ids) > 0)
+    error_message = "Set exactly one of subnet_cidrs (module creates subnets) or subnet_ids (attach to existing subnets you pass)."
   }
+}
+
+variable "subnet_ids" {
+  type        = list(string)
+  default     = []
+  description = <<-EOT
+    EXISTING subnet IDs to launch devboxes into, instead of the module creating
+    new ones. Set this (and leave subnet_cidrs empty) when your VPC has no free
+    CIDR space to carve dedicated subnets, or you want boxes in your existing
+    private subnets. The module then attaches the SG to these subnets and pins
+    RunInstances to them; it does NOT create subnets, does NOT associate a route
+    table (your subnets already have routing), and does NOT set map_public_ip
+    (your subnets' own setting governs). For a private subnet (no public IP) the
+    hand-back's access_mode is emitted as "vpn_private" automatically — the
+    coordinator then addresses boxes by their private IP over your VPN.
+    NOTE: if you also set isolate_from_cidrs, the module attaches its NACL to
+    these subnets, REPLACING their current ACL — so the subnets you pass must be
+    DEDICATED to SFK boxes (no other workloads), or the isolation affects them too.
+  EOT
 }
 
 variable "availability_zones" {
@@ -26,8 +47,11 @@ variable "availability_zones" {
 
 variable "route_table_id" {
   type        = string
+  default     = ""
   description = <<-EOT
-    Existing route table to associate the dedicated subnets with. It MUST provide:
+    Existing route table to associate the module-CREATED subnets with (required
+    only when using subnet_cidrs; ignored with subnet_ids, since your existing
+    subnets already have routing). It MUST provide:
       - a default route 0.0.0.0/0 -> an Internet Gateway (public postures A / A-VPN)
         or a NAT gateway (private postures B / C). Devboxes need outbound HTTPS
         (AWS SSM, the Starfolk coordinator, the tunnel lighthouse, GitHub, package
@@ -37,6 +61,12 @@ variable "route_table_id" {
         are not -- pick a table that already carries them.
     We only associate the subnets with this table; we never modify the table itself.
   EOT
+
+  validation {
+    # Required when the module creates subnets; irrelevant for bring-your-own.
+    condition     = length(var.subnet_ids) > 0 || var.route_table_id != ""
+    error_message = "route_table_id is required when the module creates subnets (subnet_cidrs)."
+  }
 }
 
 variable "assign_public_ip" {
