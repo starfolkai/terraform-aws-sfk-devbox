@@ -15,6 +15,16 @@ data "aws_availability_zones" "available" {
 data "aws_subnet" "byo" {
   for_each = toset(var.subnet_ids)
   id       = each.value
+
+  lifecycle {
+    postcondition {
+      # Catch a wrong-VPC subnet id at plan time with a clear message, rather
+      # than an opaque RunInstances/SG-mismatch failure at launch. The SG (and
+      # any created resources) live in var.vpc_id, so every BYO subnet must too.
+      condition     = self.vpc_id == var.vpc_id
+      error_message = "subnet_ids entry ${self.id} is in VPC ${self.vpc_id}, not vpc_id (${var.vpc_id})."
+    }
+  }
 }
 
 resource "random_uuid" "external_id" {}
