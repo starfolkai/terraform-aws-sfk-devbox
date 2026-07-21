@@ -265,8 +265,9 @@ provider "aws" {
 }
 
 module "sfk_byoc" {
-  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=v1.0.0" # pin a reviewed tag
+  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=1.1.1" # pin a reviewed tag
 
+  region            = "us-west-2"                         # must match provider "aws" region
   vpc_id            = "vpc-0123456789abcdef0"          # your existing shared VPC
   subnet_cidrs      = ["10.4.16.0/20", "10.4.32.0/20"] # free space in your VPC, one per AZ
   route_table_id    = "rtb-0your_existing_igw_or_nat"  # the RT the subnets associate with
@@ -292,6 +293,14 @@ output "sfk_handback" {
   }
 }
 ```
+
+`region` currently supports only `us-east-2` and `us-west-2` and must match the
+AWS provider region. It defaults to `us-east-2` for compatibility with releases
+before 1.1.1; west-region callers must set it explicitly. The module uses it to
+grant the control role access to the exact Starfolk-owned regional KMS key that
+encrypts the shared devbox AMI; KMS keys cannot decrypt EBS snapshots in another
+region. The old `ami_kms_key_arns` input remains only as a validated compatibility
+override; new callers should omit it and let `region` select the key.
 
 The `access_mode` output is derived from `assign_public_ip` (`public` when boxes get public IPs, `vpn_private` when they don't) — it tells Starfolk how to register the account so the coordinator addresses boxes correctly (public IP vs. private-IP-over-VPN). Send it back with the rest.
 

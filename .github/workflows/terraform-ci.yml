@@ -50,3 +50,19 @@ jobs:
       - name: terraform validate
         working-directory: ${{ matrix.dir }}
         run: terraform validate
+
+  test:
+    name: Module tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+
+      - name: terraform init
+        run: terraform init -backend=false -input=false
+
+      - name: terraform test
+        run: terraform test

@@ -3,6 +3,17 @@ variable "vpc_id" {
   description = "Existing (shared) VPC to place the dedicated SFK devbox subnets in. This module never creates a VPC — it expresses its requirements against yours."
 }
 
+variable "region" {
+  type        = string
+  default     = "us-east-2"
+  description = "AWS region where Starfolk devboxes will run. Must match the region configured on the AWS provider passed to this module. Defaults to us-east-2 for compatibility with module versions before 1.1.1."
+
+  validation {
+    condition     = contains(["us-east-2", "us-west-2"], var.region)
+    error_message = "Unsupported region. Starfolk BYOC currently supports only us-east-2 and us-west-2."
+  }
+}
+
 variable "subnet_cidrs" {
   type        = list(string)
   default     = []
@@ -233,17 +244,29 @@ variable "deny_instance_role_assume_role" {
 
 variable "ami_kms_key_arns" {
   type        = list(string)
-  default     = ["arn:aws:kms:us-east-2:450410490644:key/4bcb6251-1960-46ca-859e-3a5f24757caa"]
+  default     = null
+  nullable    = true
   description = <<-EOT
-    KMS key ARN(s) the control role may use to launch a devbox AMI whose EBS
-    snapshot is encrypted with a Starfolk-owned customer-managed key. The
-    coordinator assumes the control role, so RunInstances must Decrypt the shared
-    snapshot and let EC2 create per-volume grants. Defaults to the exact
-    `alias/sfk-devbox-shared` CMK (us-east-2) — the single key every shared devbox
-    AMI is encrypted under; the grant is scoped to just this key, not a wildcard.
-    Override only if launching in another region (Starfolk supplies the
-    region-matched key ARN) or with an unencrypted AMI (set to [] — no KMS grant).
+    Deprecated compatibility override for the KMS key ARN(s) the control role
+    may use to launch encrypted devbox AMIs. Omit this in 1.1.1 and later: the
+    module selects the correct Starfolk-owned key from `region`. If retained by
+    an existing caller, it must be empty (for an unencrypted AMI) or exactly the
+    supported key for `region`.
   EOT
+
+  validation {
+    condition = var.ami_kms_key_arns == null ? true : (
+      length(var.ami_kms_key_arns) == 0 ? true : (
+        length(var.ami_kms_key_arns) == 1 &&
+        var.ami_kms_key_arns[0] == (
+          var.region == "us-west-2" ?
+          "arn:aws:kms:us-west-2:450410490644:key/e661422c-3f6e-426f-a8d3-434f64deab8a" :
+          "arn:aws:kms:us-east-2:450410490644:key/4bcb6251-1960-46ca-859e-3a5f24757caa"
+        )
+      )
+    )
+    error_message = "ami_kms_key_arns must be omitted, empty, or exactly the Starfolk shared-AMI KMS key for region."
+  }
 }
 
 variable "tags" {
