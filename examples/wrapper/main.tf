@@ -42,8 +42,9 @@ provider "aws" {
 }
 
 module "sfk_byoc" {
-  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=v1.0.0"
+  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=1.1.1"
 
+  region         = "us-west-2"                      # must match provider "aws" region
   vpc_id         = "vpc-0123456789abcdef0"          # your existing shared VPC
   subnet_cidrs   = ["10.4.16.0/20", "10.4.32.0/20"] # free space in your VPC, one per AZ
   route_table_id = "rtb-0your_existing_igw_or_nat"  # RT the subnets associate with

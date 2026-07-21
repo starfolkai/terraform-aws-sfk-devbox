@@ -30,15 +30,20 @@ data "aws_subnet" "byo" {
 resource "random_uuid" "external_id" {}
 
 locals {
-  account_id = data.aws_caller_identity.current.account_id
-  # Derive the region from a created ARN rather than the aws_region data source:
-  # its `name` attribute is deprecated on new providers while `region` is absent
-  # on older ones — the ARN split is version-agnostic. (SG ARN is
-  # arn:aws:ec2:<region>:<acct>:security-group/...)
-  region      = split(":", aws_security_group.this.arn)[3]
+  account_id  = data.aws_caller_identity.current.account_id
   external_id = var.external_id != "" ? var.external_id : "sfk-${random_uuid.external_id.result}"
   azs         = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, length(var.subnet_cidrs))
   common_tags = merge({ "sfk:byoc" = "true" }, var.tags)
+
+  # Shared devbox AMIs are encrypted with a different Starfolk-owned CMK in
+  # each AWS region. Keep this map closed rather than accepting an arbitrary
+  # key ARN: the control role gets decrypt/grant access only to the exact key
+  # used by AMIs in the explicitly selected, supported region.
+  ami_kms_key_arn_by_region = {
+    us-east-2 = "arn:aws:kms:us-east-2:450410490644:key/4bcb6251-1960-46ca-859e-3a5f24757caa"
+    us-west-2 = "arn:aws:kms:us-west-2:450410490644:key/e661422c-3f6e-426f-a8d3-434f64deab8a"
+  }
+  ami_kms_key_arns = var.ami_kms_key_arns == null ? [local.ami_kms_key_arn_by_region[var.region]] : var.ami_kms_key_arns
 
   # The instance profile the coordinator launches devboxes with, and the role
   # inside it that iam:PassRole is pinned to. Either the module creates them
@@ -54,7 +59,7 @@ locals {
   create_subnets       = length(var.subnet_ids) == 0
   subnet_ids_effective = local.create_subnets ? aws_subnet.this[*].id : var.subnet_ids
   subnet_arns = local.create_subnets ? aws_subnet.this[*].arn : [
-    for id in var.subnet_ids : "arn:aws:ec2:${local.region}:${local.account_id}:subnet/${id}"
+    for id in var.subnet_ids : "arn:aws:ec2:${var.region}:${local.account_id}:subnet/${id}"
   ]
 
   # access_mode hint emitted in the hand-back (maps to cloud_accounts.access_mode).
@@ -120,6 +125,13 @@ resource "aws_security_group" "this" {
   description = "Starfolk BYOC devboxes"
   vpc_id      = var.vpc_id
   tags        = merge(local.common_tags, { Name = "${var.name_prefix}-sg" })
+
+  lifecycle {
+    postcondition {
+      condition     = split(":", self.arn)[3] == var.region
+      error_message = "The module region (${var.region}) must match the AWS provider region (${split(":", self.arn)[3]})."
+    }
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "nebula" {
@@ -305,27 +317,23 @@ locals {
   # assumes this role, so RunInstances must Decrypt the shared snapshot and let
   # EC2 make its own per-volume grants. Split use vs. CreateGrant so the
   # AWS-resource condition gates only grant creation (mirrors setup-aws.sh).
-  # Empty ami_kms_key_arns (unencrypted AMI) => no KMS statements.
-  # for-with-if (not a ?: ) so the empty case is a filtered-out comprehension
-  # rather than an empty tuple: a ternary would try to unify the 2-element tuple
-  # with [] (0-element) and fail with "inconsistent conditional result types".
   control_kms_statements = [
-    for stmt in [
+    for statement in [
       {
         Sid      = "SFKDevboxAMIKMSUse"
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"]
-        Resource = var.ami_kms_key_arns
+        Resource = local.ami_kms_key_arns
       },
       {
         Sid       = "SFKDevboxAMIKMSGrant"
         Effect    = "Allow"
         Action    = ["kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"]
-        Resource  = var.ami_kms_key_arns
+        Resource  = local.ami_kms_key_arns
         Condition = { Bool = { "kms:GrantIsForAWSResource" = "true" } }
       },
-    ] : stmt
-    if length(var.ami_kms_key_arns) > 0
+    ] : statement
+    if length(local.ami_kms_key_arns) > 0
   ]
 }
 

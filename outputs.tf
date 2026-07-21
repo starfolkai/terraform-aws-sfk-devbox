@@ -19,8 +19,8 @@ output "access_mode" {
 }
 
 output "region" {
-  value       = local.region
-  description = "Region these resources were created in."
+  value       = var.region
+  description = "Supported region selected for these resources and its regional shared-AMI KMS grant."
 }
 
 output "role_arn" {
