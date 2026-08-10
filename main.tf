@@ -96,9 +96,16 @@ locals {
     for pair in setproduct(keys(local.ssh_ports), var.ssh_ingress_cidrs) :
     "${pair[0]}-${pair[1]}" => { port = local.ssh_ports[pair[0]], cidr = pair[1] }
   }
-  # 7681 opened only to the Starfolk coordinator's egress range(s). The coordinator
-  # proxies the browser terminal to the box here; the browser never hits it.
-  coordinator_rules = { for cidr in var.coordinator_ingress_cidrs : cidr => cidr }
+  # The browser never hits 7681: the coordinator proxies the terminal to it.
+  # Production has a dedicated, Terraform-owned NAT EIP; custom CIDRs remain an
+  # escape hatch for staging, PR, and local coordinators.
+  prod_coordinator_egress_cidr = "18.188.161.41/32"
+  coordinator_rules = merge(
+    var.enable_web_sessions ? { for cidr in var.coordinator_ingress_cidrs : cidr => cidr } : {},
+    var.enable_prod_coordinator_web_sessions ? {
+      (local.prod_coordinator_egress_cidr) = local.prod_coordinator_egress_cidr
+    } : {},
+  )
 }
 
 # ── Dedicated subnets in the existing VPC (one per AZ) ───────────────────────
@@ -156,12 +163,12 @@ resource "aws_vpc_security_group_ingress_rule" "ssh_webpty" {
 
 # DEVBOX_PORT (7681): the coordinator's terminal proxy dials ws://<ip>:7681
 # directly, so it must be reachable from the coordinator's egress — and ONLY
-# from there (it's the full box control surface). Scoped to coordinator_ingress_cidrs,
-# which differs per coordinator deployment (prod vs dev vs a local devbox).
-# Gated on enable_web_sessions (default false): when off, 7681 is never opened
-# and boxes are reached over SSH / Nebula instead (SSM control is unaffected).
+# from there (it's the full box control surface). The production opt-in pins
+# ingress to prod's stable NAT EIP. Custom coordinator CIDRs are separately gated
+# by enable_web_sessions. When neither is enabled, 7681 stays closed and SSM
+# control is unaffected.
 resource "aws_vpc_security_group_ingress_rule" "coordinator" {
-  for_each          = var.enable_web_sessions ? local.coordinator_rules : {}
+  for_each          = local.coordinator_rules
   security_group_id = aws_security_group.this.id
   ip_protocol       = "tcp"
   from_port         = 7681

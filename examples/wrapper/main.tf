@@ -50,13 +50,13 @@ module "sfk_byoc" {
   route_table_id = "rtb-0your_existing_igw_or_nat"  # RT the subnets associate with
 
   # Access posture A-VPN — public IP, reachable only from your VPN egress:
-  assign_public_ip  = true
-  ssh_ingress_cidrs = ["203.0.113.0/24"] # your VPN egress CIDR
+  assign_public_ip                     = true
+  ssh_ingress_cidrs                    = ["203.0.113.0/24"] # your VPN egress CIDR
+  enable_prod_coordinator_web_sessions = true               # TCP 7681 from Starfolk prod only
 
   # Values Starfolk gives you:
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod"
-  # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]  # tighten 7681
-  # external_id               = "…"   # omit to auto-generate, then send the output back
+  # external_id = "…" # omit to auto-generate, then send the output back
 }
 
 # Send this whole object back to Starfolk (paste into the Cloud Accounts admin
