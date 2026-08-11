@@ -209,18 +209,18 @@ module controls via `assign_public_ip`.
 
 Pick how users reach the boxes:
 
-| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `enable_prod_coordinator_web_sessions` | `route_table_id` | Notes |
+| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `enable_web_sessions` | `route_table_id` | Notes |
 |---|---|---|---|---|---|
 | **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Enable the production coordinator for the browser terminal. |
 | **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
 | **B** — private, VPN → private IP | `false` (or `subnet_ids` = your private subnets) | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed (or omit with `subnet_ids`) | No public IP; the coordinator addresses the box by its **private VPC IP** over your VPN when the account is registered `access_mode = vpn_private`. **Supported** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
 | **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. Alternative to posture B if you'd rather not route to the private IP yourself. |
 
-`enable_prod_coordinator_web_sessions` (default `false`) opens TCP 7681 only to
-the production coordinator's stable `18.188.161.41/32` NAT egress address. Use
-the generic `enable_web_sessions` plus `coordinator_ingress_cidrs` only for a
-non-production or custom coordinator. Web sessions require a public posture
-where the coordinator can route to the box; SSM management works either way.
+`enable_web_sessions` (default `false`) opens TCP 7681 to the production
+coordinator's stable `18.188.161.41/32` NAT egress address. Add
+`coordinator_ingress_cidrs` only for a non-production or custom coordinator. Web
+sessions require a public posture where the coordinator can route to the box;
+SSM management works either way.
 
 `enable_nebula_ingress` (default `true`) opens UDP 51820; harmless for postures that don't use the overlay.
 
@@ -278,9 +278,9 @@ module "sfk_byoc" {
   route_table_id    = "rtb-0your_existing_igw_or_nat"  # the RT the subnets associate with
 
   # Posture A-VPN (public IP, reachable only from your VPN):
-  assign_public_ip                     = true
-  ssh_ingress_cidrs                    = ["203.0.113.0/24"] # your VPN egress CIDR
-  enable_prod_coordinator_web_sessions = true                # TCP 7681 from Starfolk prod only
+  assign_public_ip    = true
+  ssh_ingress_cidrs   = ["203.0.113.0/24"] # your VPN egress CIDR
+  enable_web_sessions = true                # TCP 7681 from Starfolk prod only
 
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod" # from Starfolk
   # external_id     = "..."   # omit to auto-generate; then send the output value back

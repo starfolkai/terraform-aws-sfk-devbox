@@ -100,12 +100,12 @@ locals {
   # Production has a dedicated, Terraform-owned NAT EIP; custom CIDRs remain an
   # escape hatch for staging, PR, and local coordinators.
   prod_coordinator_egress_cidr = "18.188.161.41/32"
-  coordinator_rules = merge(
-    var.enable_web_sessions ? { for cidr in var.coordinator_ingress_cidrs : cidr => cidr } : {},
-    var.enable_prod_coordinator_web_sessions ? {
+  coordinator_rules = var.enable_web_sessions ? merge(
+    {
       (local.prod_coordinator_egress_cidr) = local.prod_coordinator_egress_cidr
-    } : {},
-  )
+    },
+    { for cidr in var.coordinator_ingress_cidrs : cidr => cidr },
+  ) : {}
 }
 
 # ── Dedicated subnets in the existing VPC (one per AZ) ───────────────────────
@@ -163,10 +163,9 @@ resource "aws_vpc_security_group_ingress_rule" "ssh_webpty" {
 
 # DEVBOX_PORT (7681): the coordinator's terminal proxy dials ws://<ip>:7681
 # directly, so it must be reachable from the coordinator's egress — and ONLY
-# from there (it's the full box control surface). The production opt-in pins
-# ingress to prod's stable NAT EIP. Custom coordinator CIDRs are separately gated
-# by enable_web_sessions. When neither is enabled, 7681 stays closed and SSM
-# control is unaffected.
+# from there (it's the full box control surface). enable_web_sessions pins
+# ingress to prod's stable NAT EIP and optionally adds custom coordinator CIDRs.
+# When disabled, 7681 stays closed and SSM control is unaffected.
 resource "aws_vpc_security_group_ingress_rule" "coordinator" {
   for_each          = local.coordinator_rules
   security_group_id = aws_security_group.this.id

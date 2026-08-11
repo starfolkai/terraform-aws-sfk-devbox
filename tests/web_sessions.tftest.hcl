@@ -44,7 +44,7 @@ run "prod_web_sessions_allow_only_the_prod_nat_eip" {
   command = plan
 
   variables {
-    enable_prod_coordinator_web_sessions = true
+    enable_web_sessions = true
   }
 
   assert {
@@ -58,16 +58,16 @@ run "prod_web_sessions_allow_only_the_prod_nat_eip" {
   }
 }
 
-run "custom_web_sessions_require_explicit_cidrs" {
+run "custom_cidrs_are_ignored_without_web_sessions" {
   command = plan
 
   variables {
-    enable_web_sessions = true
+    coordinator_ingress_cidrs = ["203.0.113.10/32"]
   }
 
   assert {
     condition     = length(aws_vpc_security_group_ingress_rule.coordinator) == 0
-    error_message = "A custom web-session opt-in without CIDRs must not expose port 7681."
+    error_message = "Custom CIDRs must not open port 7681 while web sessions are disabled."
   }
 }
 
@@ -80,7 +80,7 @@ run "custom_coordinator_cidrs_remain_supported" {
   }
 
   assert {
-    condition     = toset(keys(aws_vpc_security_group_ingress_rule.coordinator)) == toset(["203.0.113.10/32"])
-    error_message = "Custom coordinator CIDRs must remain available for non-production coordinators."
+    condition     = toset(keys(aws_vpc_security_group_ingress_rule.coordinator)) == toset(["18.188.161.41/32", "203.0.113.10/32"])
+    error_message = "Web sessions must allow production plus explicit custom coordinator CIDRs."
   }
 }

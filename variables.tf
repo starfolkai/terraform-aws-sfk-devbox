@@ -104,23 +104,11 @@ variable "enable_web_sessions" {
   type        = bool
   default     = false
   description = <<-EOT
-    Open TCP 7681 (DEVBOX_PORT) to coordinator_ingress_cidrs for a non-production
-    or custom coordinator. For the normal Starfolk production coordinator, use
-    enable_prod_coordinator_web_sessions instead; it carries the production NAT
-    EIP without requiring callers to copy it. A no-public-IP / VPN posture cannot
-    serve web sessions because the hosted coordinator cannot route to the private
-    box IP.
-  EOT
-}
-
-variable "enable_prod_coordinator_web_sessions" {
-  type        = bool
-  default     = false
-  description = <<-EOT
-    Allow the Starfolk production coordinator to proxy browser terminals by
-    opening TCP 7681 only to its stable NAT egress address (18.188.161.41/32).
-    This is the standard production BYOC setting. Leave false for private-IP-only
-    boxes, which the hosted coordinator cannot route to directly.
+    Allow the Starfolk coordinator to proxy browser terminals by opening TCP
+    7681 (DEVBOX_PORT) to its stable production NAT egress address
+    (18.188.161.41/32) and any additional coordinator_ingress_cidrs. A
+    no-public-IP / VPN posture cannot serve web sessions because the hosted
+    coordinator cannot route to the private box IP.
   EOT
 }
 
@@ -128,10 +116,10 @@ variable "coordinator_ingress_cidrs" {
   type        = list(string)
   default     = []
   description = <<-EOT
-    Additional CIDR(s) allowed inbound on TCP 7681 (DEVBOX_PORT) when
-    enable_web_sessions = true. This is for non-production or custom coordinators;
-    use enable_prod_coordinator_web_sessions for the standard production path.
-    Port 7681 is the box's full control surface, so scope these CIDRs tightly.
+    Additional non-production or custom coordinator CIDR(s) allowed inbound on
+    TCP 7681 (DEVBOX_PORT) when enable_web_sessions = true. The production
+    coordinator CIDR is included automatically. Port 7681 is the box's full
+    control surface, so scope additional CIDRs tightly.
   EOT
 }
 
