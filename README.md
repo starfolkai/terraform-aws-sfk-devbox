@@ -106,8 +106,7 @@ session_archive_bucket = "acme-starfolk-session-logs"  # a bucket in YOUR accoun
 session_archive_prefix = "starfolk/"                   # optional
 ```
 
-- **Set it** and the module grants the control role `s3:PutObject` (+
-  `s3:AbortMultipartUpload`) on `<bucket>/<prefix>*` — and nothing else. No
+- **Set it** and the module grants the control role `s3:PutObject` on `<bucket>/<prefix>*` — and nothing else. No
   `s3:GetObject`, no `s3:ListBucket`, no delete. Starfolk can deposit a
   transcript into your bucket and **cannot read one back**, including transcripts
   it wrote itself. Objects land at

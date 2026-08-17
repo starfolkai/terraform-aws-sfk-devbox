@@ -363,7 +363,11 @@ locals {
       {
         Sid    = "SFKSessionLogArchiveWriteOnly"
         Effect = "Allow"
-        Action = ["s3:PutObject", "s3:AbortMultipartUpload"]
+        # PutObject only: Starfolk writes one object per PUT and never
+        # multiparts, so no multipart action is granted — AbortMultipartUpload
+        # without CreateMultipartUpload/UploadPart authorizes nothing while
+        # reading like a broader grant in your policy review.
+        Action = ["s3:PutObject"]
         Resource = (
           "arn:aws:s3:::${var.session_archive_bucket}/${local.session_archive_key_pattern}"
         )

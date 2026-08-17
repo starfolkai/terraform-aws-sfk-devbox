@@ -276,7 +276,7 @@ variable "session_archive_bucket" {
     OPTIONAL. Name of an S3 bucket **in your account** where the transcript of
     each terminated agent session is archived. This module does not create it —
     it is your bucket, with your encryption, retention and key policy — it only
-    grants the Starfolk control role `s3:PutObject` (+ `AbortMultipartUpload`) on
+    grants the Starfolk control role `s3:PutObject` on
     `<bucket>/<session_archive_prefix>*`, and deliberately NOT `s3:GetObject`,
     `s3:ListBucket` or any delete. Starfolk can deposit your sessions' logs and
     cannot read them back — not even the ones it wrote.

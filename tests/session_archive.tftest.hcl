@@ -39,9 +39,9 @@ run "bucket_grants_put_only" {
   assert {
     condition = alltrue([
       for statement in local.control_session_archive_statements :
-      alltrue([for action in statement.Action : contains(["s3:PutObject", "s3:AbortMultipartUpload"], action)])
+      alltrue([for action in statement.Action : action == "s3:PutObject"])
     ])
-    error_message = "The session-archive grant must allow only PutObject and AbortMultipartUpload — no GetObject, ListBucket, or delete."
+    error_message = "The session-archive grant must allow only PutObject — no multipart, GetObject, ListBucket, or delete."
   }
 
   # A bucket-wide grant when no prefix is given, scoped to objects (never the
