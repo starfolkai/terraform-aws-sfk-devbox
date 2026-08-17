@@ -269,6 +269,54 @@ variable "ami_kms_key_arns" {
   }
 }
 
+variable "session_archive_bucket" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    OPTIONAL. Name of an S3 bucket **in your account** where the transcript of
+    each terminated agent session is archived. This module does not create it —
+    it is your bucket, with your encryption, retention and key policy — it only
+    grants the Starfolk control role `s3:PutObject` (+ `AbortMultipartUpload`) on
+    `<bucket>/<session_archive_prefix>*`, and deliberately NOT `s3:GetObject`,
+    `s3:ListBucket` or any delete. Starfolk can deposit your sessions' logs and
+    cannot read them back — not even the ones it wrote.
+
+    What lands here: the agent's own JSONL log for the session — prompts, model
+    output, tool calls, command output, and contents of files the agent read —
+    gzipped, one object per session under
+    `<prefix>/<stage>/session-logs/workspace_id=…/session_id=…/terminated=…/rev=N.jsonl.gz`.
+
+    Leave empty and no S3 grant is created: on terminate Starfolk then **deletes**
+    the session's log content from its own database with no copy kept anywhere. It
+    is never written to a Starfolk-owned bucket.
+
+    Pass the value back to Starfolk with the rest of the hand-back (it is in
+    `terraform output -json`) — the grant existing in IAM is not enough on its
+    own; the archive only starts once the bucket is registered against your cloud
+    account.
+  EOT
+
+  validation {
+    # S3 bucket naming, loosely: 3-63 chars, lowercase alphanumerics, dots and
+    # hyphens. Catches an ARN or an s3:// URL pasted in by mistake, which would
+    # otherwise produce a policy that silently matches nothing — a grant that
+    # looks present and denies every write.
+    condition     = var.session_archive_bucket == "" || can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.session_archive_bucket))
+    error_message = "session_archive_bucket must be a bare S3 bucket name (no arn:, no s3:// prefix, no trailing slash)."
+  }
+}
+
+variable "session_archive_prefix" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    OPTIONAL key preamble inside `session_archive_bucket` — set it to share a
+    bucket with other data, and the grant narrows to that prefix. Leading and
+    trailing slashes are ignored. Empty = keys start at the top of the bucket and
+    the grant covers the whole bucket's objects.
+  EOT
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}
