@@ -90,9 +90,10 @@ variable "ssh_ingress_cidrs" {
   type        = list(string)
   default     = []
   description = <<-EOT
-    CIDRs allowed inbound on TCP 22 (SSH) and 443 (web-PTY) — the human/browser
-    facing ports. (Port 7681, the coordinator control surface, is separate — see
-    coordinator_ingress_cidrs.) Set per access posture:
+    CIDRs allowed inbound on TCP 22 (SSH) and, when enable_web_sessions is true,
+    TCP 443 (web-PTY) — the human/browser-facing ports. (Port 7681, the
+    coordinator control surface, is separate — see coordinator_ingress_cidrs.)
+    Set per access posture:
       A     (public, open)          -> ["0.0.0.0/0"]
       A-VPN (public, behind VPN)    -> ["<your-vpn-egress-cidr>"]
       B     (private, VPN)          -> ["<vpc-or-vpn-cidr>"]
@@ -104,16 +105,22 @@ variable "enable_web_sessions" {
   type        = bool
   default     = false
   description = <<-EOT
-    Open TCP 7681 (DEVBOX_PORT) so the Starfolk coordinator can serve the
-    browser-based terminal ("web sessions"). The coordinator's terminal proxy
-    dials ws://<box-ip>:7681 directly, so this port must be reachable FROM the
-    coordinator for the web terminal to work. Defaults to false — 7681 stays
-    closed and users reach boxes over SSH (22) or the Nebula overlay instead;
-    the coordinator still manages boxes over SSM regardless. Set true (and scope
-    coordinator_ingress_cidrs to the coordinator's egress) only for a public
-    posture where the coordinator can route to the box's IP. A no-public-IP /
-    VPN posture (assign_public_ip = false) can't serve web sessions — the
-    coordinator isn't on your VPN — so leave this false there.
+    Open TCP 443 for browser-based terminal sessions. The ingress rules use the
+    same ssh_ingress_cidrs as TCP 22. Defaults to false, so only SSH is opened
+    for those CIDRs. This setting does not expose the coordinator control port;
+    use enable_coordinator_access to open TCP 7681 separately.
+  EOT
+}
+
+variable "enable_coordinator_access" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Open TCP 7681 (DEVBOX_PORT) for direct access from the Starfolk coordinator.
+    The coordinator's terminal proxy dials ws://<box-ip>:7681 directly, so the
+    ingress rules use coordinator_ingress_cidrs rather than the human-facing
+    ssh_ingress_cidrs. Defaults to false; coordinator management over SSM is
+    unaffected when this port is closed.
   EOT
 }
 
@@ -122,13 +129,14 @@ variable "coordinator_ingress_cidrs" {
   default     = ["0.0.0.0/0"]
   description = <<-EOT
     CIDR(s) allowed inbound on TCP 7681 (DEVBOX_PORT) — applies ONLY when
-    enable_web_sessions = true (otherwise 7681 is never opened, whatever this is
-    set to). This is the box's full control surface: the Starfolk coordinator's
-    terminal proxy dials ws://<box-ip>:7681 directly, and ONLY the coordinator
-    connects here (the browser talks to the coordinator, not the box). Set it to
-    the coordinator's egress range for the stage that manages these boxes — it
-    differs per deployment (prod coordinator vs dev vs a local devbox). Starfolk
-    provides the range; TIGHTEN it from the 0.0.0.0/0 default for a real customer.
+    enable_coordinator_access = true (otherwise 7681 is never opened, whatever
+    this is set to). This is the box's full control surface: the Starfolk
+    coordinator's terminal proxy dials ws://<box-ip>:7681 directly, and ONLY the
+    coordinator connects here (the browser talks to the coordinator, not the
+    box). Set it to the coordinator's egress range for the stage that manages
+    these boxes — it differs per deployment (prod coordinator vs dev vs a local
+    devbox). Starfolk provides the range; TIGHTEN it from the 0.0.0.0/0 default
+    for a real customer.
   EOT
 }
 

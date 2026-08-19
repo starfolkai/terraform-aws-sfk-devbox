@@ -53,9 +53,13 @@ module "sfk_byoc" {
   assign_public_ip  = true
   ssh_ingress_cidrs = ["203.0.113.0/24"] # your VPN egress CIDR
 
+  # Browser sessions open 443 to the same CIDRs as SSH:
+  enable_web_sessions = true
+
   # Values Starfolk gives you:
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod"
-  # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]  # tighten 7681
+  # enable_coordinator_access = true                                      # opt-in 7681
+  # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]     # tighten 7681
   # external_id               = "…"   # omit to auto-generate, then send the output back
 }
 

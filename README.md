@@ -90,7 +90,12 @@ reachability would need to be listed explicitly.
 
 ## How permissions / access work
 
-You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h) credentials. Revoke any time by removing the role. Every action lands in your CloudTrail. Starfolk only ever calls AWS API endpoints — it never connects *to* a box.
+You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated
+by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h)
+credentials. Revoke any time by removing the role. Every AWS action lands in
+your CloudTrail. Starfolk manages boxes through AWS APIs by default; setting
+`enable_coordinator_access = true` additionally permits the coordinator to
+connect directly to TCP 7681 from `coordinator_ingress_cidrs`.
 
 ## Instance role: own it yourself
 
@@ -133,13 +138,14 @@ neighbor, know what each control can and can't do:
   can't stop intra-VPC reachability — it only steers *non-local* (internet,
   peered, TGW) traffic.
 - **Security groups protect *inbound to the boxes*.** Our SG is default-deny
-  inbound and opens only 22/443 (to `ssh_ingress_cidrs`), Nebula UDP, and — only
-  when `enable_web_sessions = true` — 7681 (to `coordinator_ingress_cidrs`), with
+  inbound and opens 22 (to `ssh_ingress_cidrs`), 443 to those same CIDRs only
+  when `enable_web_sessions = true`, Nebula UDP, and 7681 only when
+  `enable_coordinator_access = true` (to `coordinator_ingress_cidrs`), with
   no self-rule, so a neighbor can't open connections *to* the boxes. (Exception:
   posture A's `["0.0.0.0/0"]` on `ssh_ingress_cidrs` lets any in-VPC host reach
-  22/443; scope it if that matters.) But the SG's egress is allow-all, so it does
-  **not** stop the boxes from reaching *out* to a neighbor — that's the neighbor's
-  own SG's job.
+  22 and, when enabled, 443; scope it if that matters.) But the SG's egress is
+  allow-all, so it does **not** stop the boxes from reaching *out* to a neighbor —
+  that's the neighbor's own SG's job.
 
 To fully wall the boxes off from specific neighbors in **both** directions, set
 `isolate_from_cidrs` to those workloads' CIDRs:
@@ -169,7 +175,8 @@ no NACL, no dedicated subnet:**
 
 - **Inbound (neighbor → boxes):** already covered by `sfk-devbox-sg` (default-deny
   inbound). Scope `ssh_ingress_cidrs` to your VPN/admin CIDR only (not the VPC or
-  the shared subnet), and set `enable_web_sessions=false` / `enable_nebula_ingress=false`
+  the shared subnet), and set `enable_web_sessions=false` /
+  `enable_coordinator_access=false` / `enable_nebula_ingress=false`
   for a private posture — then a co-tenant in the same subnet has no open port to
   the boxes.
 - **Outbound (boxes → neighbor):** enforced on **your** side. Your neighbor
@@ -208,14 +215,22 @@ module controls via `assign_public_ip`.
 
 Pick how users reach the boxes:
 
-| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `enable_web_sessions` | `route_table_id` | Notes |
-|---|---|---|---|---|---|
-| **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Set `enable_web_sessions = true` for the browser terminal. |
-| **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
-| **B** — private, VPN → private IP | `false` (or `subnet_ids` = your private subnets) | `["<vpc-or-vpn-cidr>"]` | `false` | NAT-routed (or omit with `subnet_ids`) | No public IP; the coordinator addresses the box by its **private VPC IP** over your VPN when the account is registered `access_mode = vpn_private`. **Supported** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
-| **C** — private, Nebula overlay | `false` | `[]` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. Alternative to posture B if you'd rather not route to the private IP yourself. |
+| Posture | `assign_public_ip` | `ssh_ingress_cidrs` | `enable_web_sessions` | `enable_coordinator_access` | `route_table_id` | Notes |
+|---|---|---|---|---|---|---|
+| **A** — public, open (easiest) | `true` | `["0.0.0.0/0"]` | `true` (optional) | `true` only when direct coordinator access is needed | public/IGW-routed | Today's direct-SSH flow; boxes internet-reachable. Set `enable_web_sessions = true` for the browser terminal. |
+| **A-VPN** — public, behind your VPN | `true` | `["<vpn-egress-cidr>"]` | `true` (optional) | `true` only when direct coordinator access is needed | public/IGW-routed | Same client, **zero code change**, but reachable only from your VPN. (ENI still has a public IP — won't pass a strict "no public IPs" Config rule.) |
+| **B** — private, VPN → private IP | `false` (or `subnet_ids` = your private subnets) | `["<vpc-or-vpn-cidr>"]` | `false` | `false` | NAT-routed (or omit with `subnet_ids`) | No public IP; the coordinator addresses the box by its **private VPC IP** over your VPN when the account is registered `access_mode = vpn_private`. **Supported** — see [Reaching boxes without a public IP](#reaching-boxes-without-a-public-ip). |
+| **C** — private, Nebula overlay | `false` | `[]` | `false` | `false` | NAT-routed | No public IP; reach via `sfk setup tunnel`. Overlay rides `nebula0`, so no 22/443 ingress. Alternative to posture B if you'd rather not route to the private IP yourself. |
 
-`enable_web_sessions` (default `false`) opens TCP 7681 so the coordinator can serve the browser terminal — only usable on a public posture where the coordinator can route to the box's IP. With it off, boxes are reached over SSH (22) or Nebula; the coordinator still manages them over SSM either way.
+`enable_web_sessions` (default `false`) opens TCP 443 to the same
+`ssh_ingress_cidrs` as SSH. `enable_coordinator_access` (also default `false`)
+independently opens TCP 7681 to `coordinator_ingress_cidrs`. The coordinator
+still manages boxes over SSM when 7681 is closed.
+
+When upgrading from a release where `enable_web_sessions` opened TCP 7681, set
+`enable_coordinator_access = true` explicitly if that direct coordinator path is
+still required. Setting only `enable_web_sessions = true` now opens TCP 443, not
+TCP 7681.
 
 `enable_nebula_ingress` (default `true`) opens UDP 51820; harmless for postures that don't use the overlay.
 
@@ -273,8 +288,13 @@ module "sfk_byoc" {
   route_table_id    = "rtb-0your_existing_igw_or_nat"  # the RT the subnets associate with
 
   # Posture A-VPN (public IP, reachable only from your VPN):
-  assign_public_ip  = true
-  ssh_ingress_cidrs = ["203.0.113.0/24"]               # your VPN egress CIDR
+  assign_public_ip    = true
+  ssh_ingress_cidrs   = ["203.0.113.0/24"]             # your VPN egress CIDR
+  enable_web_sessions = true                            # opens 443 to the same CIDR
+
+  # Optional legacy coordinator path:
+  # enable_coordinator_access = true
+  # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]
 
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod" # from Starfolk
   # external_id     = "..."   # omit to auto-generate; then send the output value back

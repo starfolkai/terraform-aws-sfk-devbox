@@ -86,12 +86,15 @@ locals {
   )
 
   # Human/browser-facing ingress from each allowed CIDR (posture-dependent):
-  #   22   SSH
-  #   443  public web-PTY listener (ticket-gated wss)
+  #   22   SSH (always configured for every ssh_ingress_cidrs entry)
+  #   443  public web-PTY listener (ticket-gated wss; opt-in)
   # DEVBOX_PORT 7681 is deliberately NOT here — it's the full control surface and
   # only the *coordinator* connects to it (ws://<ip>:7681), so it gets its own
   # coordinator-scoped rule below rather than being opened to the human CIDRs.
-  ssh_ports = { ssh = 22, webpty = 443 }
+  ssh_ports = merge(
+    { ssh = 22 },
+    var.enable_web_sessions ? { webpty = 443 } : {},
+  )
   ssh_rules = {
     for pair in setproduct(keys(local.ssh_ports), var.ssh_ingress_cidrs) :
     "${pair[0]}-${pair[1]}" => { port = local.ssh_ports[pair[0]], cidr = pair[1] }
@@ -158,10 +161,10 @@ resource "aws_vpc_security_group_ingress_rule" "ssh_webpty" {
 # directly, so it must be reachable from the coordinator's egress — and ONLY
 # from there (it's the full box control surface). Scoped to coordinator_ingress_cidrs,
 # which differs per coordinator deployment (prod vs dev vs a local devbox).
-# Gated on enable_web_sessions (default false): when off, 7681 is never opened
+# Gated on enable_coordinator_access (default false): when off, 7681 is never opened
 # and boxes are reached over SSH / Nebula instead (SSM control is unaffected).
 resource "aws_vpc_security_group_ingress_rule" "coordinator" {
-  for_each          = var.enable_web_sessions ? local.coordinator_rules : {}
+  for_each          = var.enable_coordinator_access ? local.coordinator_rules : {}
   security_group_id = aws_security_group.this.id
   ip_protocol       = "tcp"
   from_port         = 7681
