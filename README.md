@@ -145,7 +145,9 @@ neighbor, know what each control can and can't do:
   posture A's `["0.0.0.0/0"]` on `ssh_ingress_cidrs` lets any in-VPC host reach
   22 and, when enabled, 443; scope it if that matters.) But the SG's egress is
   allow-all, so it does **not** stop the boxes from reaching *out* to a neighbor —
-  that's the neighbor's own SG's job.
+  that's the neighbor's own SG's job. If you want a *specific* workload of yours
+  to reach the boxes, don't widen these CIDRs — see
+  [Letting your own workloads reach the boxes](#letting-your-own-workloads-reach-the-boxes).
 
 To fully wall the boxes off from specific neighbors in **both** directions, set
 `isolate_from_cidrs` to those workloads' CIDRs:
@@ -187,6 +189,64 @@ no NACL, no dedicated subnet:**
 That SG-to-SG pattern is the standard way to isolate co-located workloads in a
 shared subnet — so co-locating on your existing private subnets is fine and needs
 no VPC change.
+
+## Letting your own workloads reach the boxes
+
+The section above is about keeping neighbors *out*. The mirror case is wanting
+one **in**: an agent runs a dev server, a debugger, or an internal test harness
+on a box, and something of yours — a CI runner, a load generator, a staging
+service, a bastion — has to connect to it. Opening that with `ssh_ingress_cidrs`
+would be wrong twice over: it would also open 22 (and 443), and it would open it
+to a CIDR rather than to the specific workload.
+
+`ingress_source_security_group_ids` is the narrow tool for it. Pass the **source
+workload's** security group and the module adds one ingress rule per
+(protocol, SG) to the devbox SG, over a port range that defaults to
+**1024-65535** on **TCP and UDP**:
+
+```hcl
+ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
+# ingress_source_protocols = ["tcp", "udp"]  # default
+# ingress_source_from_port = 1024            # default
+# ingress_source_to_port   = 65535           # default (MAX)
+```
+
+Narrow the range, or the protocols, whenever you know them — nothing else about
+this changes:
+
+```hcl
+ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
+ingress_source_protocols          = ["tcp"]
+ingress_source_from_port          = 8080
+ingress_source_to_port            = 8090
+```
+
+Why it's shaped this way:
+
+- **Optional and off by default.** Empty (the default) adds no rule and no SG
+  lookup — the plan is identical to not having the input at all.
+- **SG-to-SG, not CIDR.** The rule tracks the source workload's instances as they
+  scale in and out, so you never maintain a list of their IPs. It's the same
+  reference the hand-back's `security_group_id` exists for, pointed the other way.
+- **1024 floor by default.** The privileged ports stay out of the range, so this
+  can't quietly widen 22, 443, or 7681 — each keeps its own flag and CIDRs. Set
+  `ingress_source_from_port` below 1024 only if you mean to.
+- **TCP and UDP, because the range is the control.** An agent's service is as
+  likely to be UDP (a QUIC dev server, a metrics receiver, a game server) as TCP,
+  and restricting to TCP would just be an arbitrary gap in the same port window.
+  `ingress_source_protocols = ["tcp"]` (or `["udp"]`) narrows it. Only those two
+  are accepted — a port *range* is meaningless for ICMP and illegal for the `-1`
+  wildcard, so those are rejected rather than passed through. The Nebula rule
+  (UDP 51820, `enable_nebula_ingress`) is untouched and stays independent.
+- **Inbound only.** This does not let a box reach *your* workload — for that,
+  allow the hand-back's `security_group_id` in **your** workload's SG.
+- **Same VPC.** Each SG must be in `vpc_id`; AWS resolves SG references only
+  within a VPC, so a wrong-VPC id fails at plan time with a clear message rather
+  than at apply. Passing the module's own devbox SG is rejected too — that would
+  be a box-to-box self-rule.
+- **`isolate_from_cidrs` still wins.** The NACL is evaluated before the SG, so a
+  source inside a denied CIDR stays denied. Don't set both against the same
+  workload and expect this to open it.
 
 ## Instance launch configuration (IMDSv2 + EBS encryption)
 
@@ -233,6 +293,11 @@ still required. Setting only `enable_web_sessions = true` now opens TCP 443, not
 TCP 7681.
 
 `enable_nebula_ingress` (default `true`) opens UDP 51820; harmless for postures that don't use the overlay.
+
+None of the postures above open any port to a workload of *yours* inside the
+VPC. That's a separate, optional input — `ingress_source_security_group_ids`
+(default: none) — and it composes with every posture: see
+[Letting your own workloads reach the boxes](#letting-your-own-workloads-reach-the-boxes).
 
 ## Reaching boxes without a public IP
 
@@ -295,6 +360,13 @@ module "sfk_byoc" {
   # Optional legacy coordinator path:
   # enable_coordinator_access = true
   # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]
+
+  # Optional: let one of your workloads reach services agents run on the boxes.
+  # Defaults to TCP+UDP 1024-65535 from the SG(s) you list; narrow it if you can.
+  # ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
+  # ingress_source_protocols          = ["tcp"]
+  # ingress_source_from_port          = 8080
+  # ingress_source_to_port            = 8090
 
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod" # from Starfolk
   # external_id     = "..."   # omit to auto-generate; then send the output value back

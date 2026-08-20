@@ -140,6 +140,112 @@ variable "coordinator_ingress_cidrs" {
   EOT
 }
 
+variable "ingress_source_security_group_ids" {
+  type        = list(string)
+  default     = []
+  description = <<-EOT
+    OPTIONAL. Security group ID(s) in vpc_id whose members are allowed inbound to
+    the devboxes on ingress_source_from_port-ingress_source_to_port (default
+    1024-65535), for each protocol in ingress_source_protocols (default TCP and
+    UDP). Use this when a workload of yours must reach a service an agent runs on
+    a box (a dev server, a debugger, an internal test harness) — an SG-to-SG
+    reference tracks the workload's instances as they scale, so you never chase
+    their IPs.
+    Empty (default) is a no-op: no such rule exists and this input changes
+    nothing. Setting it does NOT widen any other port — 22 / 443 / 7681 / Nebula
+    keep their own knobs and CIDRs.
+    Each SG must live in vpc_id (checked at plan time), since the devbox SG does
+    and AWS only resolves same-VPC SG references. Pass the SG of the *source*
+    workload, not the devbox SG — a self-reference would let any box open
+    connections to any other box.
+    Note the direction: this is inbound to the boxes only. It does not let a box
+    reach your workload — that's the workload's own SG's job (allow the
+    security_group_id from the hand-back). And an isolate_from_cidrs deny still
+    wins, because the NACL is evaluated before the SG.
+  EOT
+
+  validation {
+    condition = alltrue([
+      for id in var.ingress_source_security_group_ids : can(regex("^sg-[0-9a-f]{8,17}$", id))
+    ])
+    error_message = "ingress_source_security_group_ids entries must be security group IDs (sg-...)."
+  }
+}
+
+variable "ingress_source_protocols" {
+  type        = list(string)
+  default     = ["tcp", "udp"]
+  description = <<-EOT
+    IP protocols the ingress_source_security_group_ids range is opened for. One
+    rule is created per (protocol, source SG). Defaults to both TCP and UDP: a
+    port range is a port range, and an agent's service may well be UDP (a QUIC
+    dev server, a metrics receiver, a game server), so restricting to TCP would
+    just be an arbitrary gap. Narrow it to ["tcp"] (or ["udp"]) when you know
+    which one you need — that's the only reason to set this.
+    Only "tcp" and "udp" are accepted: they are the protocols a port RANGE is
+    meaningful for. ICMP has no ports, and the all-protocols wildcard ("-1")
+    cannot carry a port range at all — for either of those, tell us what you're
+    trying to reach and we'll shape a rule for it.
+    Ignored when ingress_source_security_group_ids is empty.
+  EOT
+
+  validation {
+    condition     = length(var.ingress_source_protocols) > 0
+    error_message = "ingress_source_protocols must not be empty — omit it for the default [\"tcp\", \"udp\"], or leave ingress_source_security_group_ids empty to add no rules at all."
+  }
+
+  validation {
+    condition = alltrue([
+      for protocol in var.ingress_source_protocols : contains(["tcp", "udp"], protocol)
+    ])
+    error_message = "ingress_source_protocols entries must be \"tcp\" or \"udp\" (lowercase) — the protocols a port range applies to."
+  }
+
+  validation {
+    condition     = length(distinct(var.ingress_source_protocols)) == length(var.ingress_source_protocols)
+    error_message = "ingress_source_protocols must not repeat a protocol."
+  }
+}
+
+variable "ingress_source_from_port" {
+  type        = number
+  default     = 1024
+  description = <<-EOT
+    First port of the range opened to ingress_source_security_group_ids, for
+    every protocol in ingress_source_protocols. Defaults to 1024 — the
+    unprivileged range, where an agent's dev servers and test harnesses listen —
+    so the well-known ports below it (including 22 and 443) are NOT reachable
+    from the source SG unless you lower this deliberately.
+    Ignored when ingress_source_security_group_ids is empty.
+  EOT
+
+  validation {
+    condition     = var.ingress_source_from_port >= 0 && var.ingress_source_from_port <= 65535
+    error_message = "ingress_source_from_port must be between 0 and 65535."
+  }
+}
+
+variable "ingress_source_to_port" {
+  type        = number
+  default     = 65535
+  description = <<-EOT
+    Last port of the range opened to ingress_source_security_group_ids, for every
+    protocol in ingress_source_protocols. Defaults to 65535 (MAX), so the default
+    range is the whole unprivileged space, 1024-65535.
+    Ignored when ingress_source_security_group_ids is empty.
+  EOT
+
+  validation {
+    condition     = var.ingress_source_to_port >= 0 && var.ingress_source_to_port <= 65535
+    error_message = "ingress_source_to_port must be between 0 and 65535."
+  }
+
+  validation {
+    condition     = var.ingress_source_to_port >= var.ingress_source_from_port
+    error_message = "ingress_source_to_port must be greater than or equal to ingress_source_from_port."
+  }
+}
+
 variable "isolate_from_cidrs" {
   type        = list(string)
   default     = []
