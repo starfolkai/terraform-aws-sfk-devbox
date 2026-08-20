@@ -119,6 +119,15 @@ locals {
   # 7681 opened only to the Starfolk coordinator's egress range(s). The coordinator
   # proxies the browser terminal to the box here; the browser never hits it.
   coordinator_rules = { for cidr in var.coordinator_ingress_cidrs : cidr => cidr }
+
+  # Optional source-SG ingress: one rule per (protocol, source SG) over the
+  # configured port range. TCP *and* UDP by default — the range is the control
+  # here, and an agent's service is as likely to be UDP (QUIC, a metrics
+  # receiver) as TCP; ingress_source_protocols narrows it. Empty by default.
+  source_sg_rules = {
+    for pair in setproduct(var.ingress_source_protocols, var.ingress_source_security_group_ids) :
+    "${pair[0]}-${pair[1]}" => { protocol = pair[0], source_sg = pair[1] }
+  }
 }
 
 # ── Dedicated subnets in the existing VPC (one per AZ) ───────────────────────
@@ -195,17 +204,19 @@ resource "aws_vpc_security_group_ingress_rule" "coordinator" {
 # than CIDR, so the rule follows the workload's instances as they scale. The port
 # range defaults to 1024-65535 — the unprivileged range — which is why this can't
 # accidentally widen 22 / 443 / 7681: those sit below 1024 and keep their own
-# CIDR-scoped rules above. Created only for the SGs passed in; none by default.
+# CIDR-scoped rules above. That range, not the protocol, is what bounds this, so
+# both TCP and UDP are opened by default (see ingress_source_protocols). Created
+# only for the SGs passed in; none by default.
 resource "aws_vpc_security_group_ingress_rule" "source_security_group" {
-  for_each = data.aws_security_group.ingress_source
+  for_each = local.source_sg_rules
 
   security_group_id = aws_security_group.this.id
-  ip_protocol       = "tcp"
+  ip_protocol       = each.value.protocol
   from_port         = var.ingress_source_from_port
   to_port           = var.ingress_source_to_port
-  # From the validated data source, so the wrong-VPC postcondition gates the rule.
-  referenced_security_group_id = each.value.id
-  description                  = "TCP ${var.ingress_source_from_port}-${var.ingress_source_to_port} from security group ${each.value.id}"
+  # Read through the data source, so its wrong-VPC postcondition gates the rule.
+  referenced_security_group_id = data.aws_security_group.ingress_source[each.value.source_sg].id
+  description                  = "${upper(each.value.protocol)} ${var.ingress_source_from_port}-${var.ingress_source_to_port} from security group ${each.value.source_sg}"
 
   lifecycle {
     precondition {
@@ -213,7 +224,7 @@ resource "aws_vpc_security_group_ingress_rule" "source_security_group" {
       # open connections to every other box on the range — never what's wanted
       # here, and it's the one id a customer might paste back from an earlier
       # hand-back. Pass the SOURCE workload's SG instead.
-      condition     = each.value.id != aws_security_group.this.id
+      condition     = each.value.source_sg != aws_security_group.this.id
       error_message = "ingress_source_security_group_ids must not contain the module's own devbox security group (${aws_security_group.this.id}) — that would be a box-to-box self-rule. Pass the source workload's security group."
     }
   }

@@ -1,8 +1,10 @@
-# Optional source-SG ingress: ingress_source_security_group_ids opens a TCP port
-# range (default 1024-65535) on the devbox SG to the members of the SGs passed in.
+# Optional source-SG ingress: ingress_source_security_group_ids opens a port
+# range (default 1024-65535) on the devbox SG to the members of the SGs passed
+# in, for each protocol in ingress_source_protocols (default TCP + UDP).
 # The load-bearing properties: it is a no-op by default, it references the SOURCE
-# SG (not a CIDR), it opens ONLY the configured range, and it never widens the
-# human/coordinator ports that have their own knobs.
+# SG (not a CIDR), it opens ONLY the configured range on the configured
+# protocols, and it never widens the human/coordinator ports that have their own
+# knobs.
 
 mock_provider "aws" {
   # The wrong-VPC postcondition compares the source SG's real VPC to var.vpc_id,
@@ -42,7 +44,8 @@ run "no_source_sg_rule_by_default" {
   }
 }
 
-run "source_sg_opens_1024_to_max_by_default" {
+# Default protocols are TCP *and* UDP: one rule each, same range, same source SG.
+run "source_sg_opens_tcp_and_udp_1024_to_max_by_default" {
   command = plan
 
   variables {
@@ -58,34 +61,98 @@ run "source_sg_opens_1024_to_max_by_default" {
 
   assert {
     condition = (
-      length(aws_vpc_security_group_ingress_rule.source_security_group) == 1 &&
+      length(aws_vpc_security_group_ingress_rule.source_security_group) == 2 &&
+      toset([
+        for rule in aws_vpc_security_group_ingress_rule.source_security_group : rule.ip_protocol
+      ]) == toset(["tcp", "udp"]) &&
       alltrue([
         for rule in aws_vpc_security_group_ingress_rule.source_security_group :
-        rule.ip_protocol == "tcp" &&
         rule.from_port == 1024 &&
         rule.to_port == 65535 &&
         rule.referenced_security_group_id == "sg-0aaaaaaaaaaaaaaaa" &&
         rule.cidr_ipv4 == null
       ])
     )
-    error_message = "A source SG must open TCP 1024-65535 referenced by SG id (not by CIDR)."
+    error_message = "A source SG must open TCP and UDP 1024-65535, referenced by SG id (not by CIDR)."
   }
 
   # The whole point of the 1024 floor: enabling this must not touch the
-  # human/coordinator ports, which keep their own flags and CIDRs.
+  # human/coordinator ports, which keep their own flags and CIDRs. Nebula's
+  # UDP rule is likewise untouched by adding UDP here.
   assert {
     condition = (
       length(aws_vpc_security_group_ingress_rule.ssh_webpty) == 1 &&
       alltrue([
         for rule in aws_vpc_security_group_ingress_rule.ssh_webpty : rule.from_port == 22
       ]) &&
-      length(aws_vpc_security_group_ingress_rule.coordinator) == 0
+      length(aws_vpc_security_group_ingress_rule.coordinator) == 0 &&
+      length(aws_vpc_security_group_ingress_rule.nebula) == 1 &&
+      alltrue([
+        for rule in aws_vpc_security_group_ingress_rule.nebula :
+        rule.from_port == 51820 && rule.to_port == 51820 && rule.cidr_ipv4 == "0.0.0.0/0"
+      ])
     )
-    error_message = "Source-SG ingress must not open or widen the SSH / web-PTY / coordinator ports."
+    error_message = "Source-SG ingress must not open or widen the SSH / web-PTY / coordinator ports, nor alter the Nebula rule."
   }
 }
 
-run "custom_port_range_is_applied_to_every_source_sg" {
+run "protocols_can_be_narrowed_to_tcp_only" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = ["tcp"]
+  }
+
+  override_resource {
+    target = aws_security_group.this
+    values = {
+      arn = "arn:aws:ec2:us-east-2:123456789012:security-group/sg-0123456789abcdef0"
+    }
+  }
+
+  assert {
+    condition = (
+      length(aws_vpc_security_group_ingress_rule.source_security_group) == 1 &&
+      alltrue([
+        for rule in aws_vpc_security_group_ingress_rule.source_security_group :
+        rule.ip_protocol == "tcp"
+      ])
+    )
+    error_message = "ingress_source_protocols = [\"tcp\"] must create the TCP rule only."
+  }
+}
+
+run "protocols_can_be_narrowed_to_udp_only" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = ["udp"]
+    ingress_source_from_port          = 5000
+    ingress_source_to_port            = 5010
+  }
+
+  override_resource {
+    target = aws_security_group.this
+    values = {
+      arn = "arn:aws:ec2:us-east-2:123456789012:security-group/sg-0123456789abcdef0"
+    }
+  }
+
+  assert {
+    condition = (
+      length(aws_vpc_security_group_ingress_rule.source_security_group) == 1 &&
+      alltrue([
+        for rule in aws_vpc_security_group_ingress_rule.source_security_group :
+        rule.ip_protocol == "udp" && rule.from_port == 5000 && rule.to_port == 5010
+      ])
+    )
+    error_message = "ingress_source_protocols = [\"udp\"] must create the UDP rule only, over the configured range."
+  }
+}
+
+run "custom_port_range_is_applied_to_every_source_sg_and_protocol" {
   command = plan
 
   variables {
@@ -101,19 +168,31 @@ run "custom_port_range_is_applied_to_every_source_sg" {
     }
   }
 
+  # 2 SGs x 2 protocols, each keyed "<protocol>-<sg>" so the pairs are distinct.
   assert {
     condition = (
-      length(aws_vpc_security_group_ingress_rule.source_security_group) == 2 &&
-      toset([
-        for rule in aws_vpc_security_group_ingress_rule.source_security_group :
-        rule.referenced_security_group_id
-      ]) == toset(["sg-0aaaaaaaaaaaaaaaa", "sg-0bbbbbbbbbbbbbbbb"]) &&
+      length(aws_vpc_security_group_ingress_rule.source_security_group) == 4 &&
+      toset(keys(aws_vpc_security_group_ingress_rule.source_security_group)) == toset([
+        "tcp-sg-0aaaaaaaaaaaaaaaa",
+        "udp-sg-0aaaaaaaaaaaaaaaa",
+        "tcp-sg-0bbbbbbbbbbbbbbbb",
+        "udp-sg-0bbbbbbbbbbbbbbbb",
+      ]) &&
       alltrue([
         for rule in aws_vpc_security_group_ingress_rule.source_security_group :
         rule.from_port == 8080 && rule.to_port == 8090
       ])
     )
-    error_message = "Each source SG must get one rule carrying the configured port range."
+    error_message = "Every (protocol, source SG) pair must get one rule carrying the configured port range."
+  }
+
+  # Each rule must reference the SG from its own key, not another one's.
+  assert {
+    condition = alltrue([
+      for key, rule in aws_vpc_security_group_ingress_rule.source_security_group :
+      rule.referenced_security_group_id == trimprefix(trimprefix(key, "tcp-"), "udp-")
+    ])
+    error_message = "Each rule must reference the source SG named in its own key."
   }
 }
 
@@ -173,6 +252,64 @@ run "non_security_group_id_fails" {
   }
 
   expect_failures = [var.ingress_source_security_group_ids]
+}
+
+# A port range is meaningless for ICMP and illegal for the "-1" wildcard, so the
+# protocol list is closed rather than passed through to the provider.
+run "unsupported_protocol_fails" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = ["tcp", "icmp"]
+  }
+
+  expect_failures = [var.ingress_source_protocols]
+}
+
+run "wildcard_protocol_fails" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = ["-1"]
+  }
+
+  expect_failures = [var.ingress_source_protocols]
+}
+
+run "uppercase_protocol_fails" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = ["TCP"]
+  }
+
+  expect_failures = [var.ingress_source_protocols]
+}
+
+# An empty list would silently drop the rules a caller asked for by passing SGs.
+run "empty_protocol_list_fails" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = []
+  }
+
+  expect_failures = [var.ingress_source_protocols]
+}
+
+run "duplicate_protocol_fails" {
+  command = plan
+
+  variables {
+    ingress_source_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa"]
+    ingress_source_protocols          = ["tcp", "tcp"]
+  }
+
+  expect_failures = [var.ingress_source_protocols]
 }
 
 # A wrong-VPC source SG has to fail at PLAN time with our message; AWS would

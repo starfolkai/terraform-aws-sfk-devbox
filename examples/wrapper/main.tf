@@ -58,8 +58,10 @@ module "sfk_byoc" {
 
   # Optional: let one of your own workloads reach a service an agent runs on the
   # boxes (dev server, debugger, test harness), scoped by its SG rather than a
-  # CIDR. Defaults to TCP 1024-65535; narrow the range when you know the ports.
+  # CIDR. Defaults to TCP+UDP 1024-65535; narrow the range and the protocol list
+  # when you know them.
   # ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
+  # ingress_source_protocols          = ["tcp"]
   # ingress_source_from_port          = 8080
   # ingress_source_to_port            = 8090
 

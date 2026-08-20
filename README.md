@@ -200,19 +200,23 @@ would be wrong twice over: it would also open 22 (and 443), and it would open it
 to a CIDR rather than to the specific workload.
 
 `ingress_source_security_group_ids` is the narrow tool for it. Pass the **source
-workload's** security group and the module adds one ingress rule per SG to the
-devbox SG, over a TCP port range that defaults to **1024-65535**:
+workload's** security group and the module adds one ingress rule per
+(protocol, SG) to the devbox SG, over a port range that defaults to
+**1024-65535** on **TCP and UDP**:
 
 ```hcl
 ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
-# ingress_source_from_port = 1024   # default
-# ingress_source_to_port   = 65535  # default (MAX)
+# ingress_source_protocols = ["tcp", "udp"]  # default
+# ingress_source_from_port = 1024            # default
+# ingress_source_to_port   = 65535           # default (MAX)
 ```
 
-Narrow the range whenever you know the ports — nothing else about this changes:
+Narrow the range, or the protocols, whenever you know them — nothing else about
+this changes:
 
 ```hcl
 ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
+ingress_source_protocols          = ["tcp"]
 ingress_source_from_port          = 8080
 ingress_source_to_port            = 8090
 ```
@@ -227,8 +231,13 @@ Why it's shaped this way:
 - **1024 floor by default.** The privileged ports stay out of the range, so this
   can't quietly widen 22, 443, or 7681 — each keeps its own flag and CIDRs. Set
   `ingress_source_from_port` below 1024 only if you mean to.
-- **TCP only.** UDP has one dedicated case here (Nebula, `enable_nebula_ingress`)
-  and no reason to be broadened; tell us if you need it.
+- **TCP and UDP, because the range is the control.** An agent's service is as
+  likely to be UDP (a QUIC dev server, a metrics receiver, a game server) as TCP,
+  and restricting to TCP would just be an arbitrary gap in the same port window.
+  `ingress_source_protocols = ["tcp"]` (or `["udp"]`) narrows it. Only those two
+  are accepted — a port *range* is meaningless for ICMP and illegal for the `-1`
+  wildcard, so those are rejected rather than passed through. The Nebula rule
+  (UDP 51820, `enable_nebula_ingress`) is untouched and stays independent.
 - **Inbound only.** This does not let a box reach *your* workload — for that,
   allow the hand-back's `security_group_id` in **your** workload's SG.
 - **Same VPC.** Each SG must be in `vpc_id`; AWS resolves SG references only
@@ -353,8 +362,9 @@ module "sfk_byoc" {
   # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]
 
   # Optional: let one of your workloads reach services agents run on the boxes.
-  # Defaults to TCP 1024-65535 from the SG(s) you list; narrow it if you can.
+  # Defaults to TCP+UDP 1024-65535 from the SG(s) you list; narrow it if you can.
   # ingress_source_security_group_ids = ["sg-0your_ci_runner_sg"]
+  # ingress_source_protocols          = ["tcp"]
   # ingress_source_from_port          = 8080
   # ingress_source_to_port            = 8090
 
