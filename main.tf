@@ -410,6 +410,11 @@ resource "aws_iam_role_policy" "control" {
           "ec2:DescribeInstances", "ec2:DescribeInstanceAttribute", "ec2:DescribeInstanceTypes",
           "ec2:DescribeTags", "ec2:DescribeImages", "ec2:DescribeAddresses",
           "ec2:DescribeSecurityGroups", "ec2:DescribeSubnets", "ec2:DescribeKeyPairs",
+          # DescribeVolumes / DescribeVolumesModifications support no
+          # resource-level scoping, so they can only be granted on "*".
+          # They are read-only, and the mutation they feed (ModifyVolume,
+          # see EC2ModifyTaggedVolumes) is tag-scoped.
+          "ec2:DescribeVolumes", "ec2:DescribeVolumesModifications",
         ]
         Resource = "*"
       },
@@ -441,6 +446,23 @@ resource "aws_iam_role_policy" "control" {
           "ec2:CreateTags", "ec2:DeleteTags", "ec2:ModifyInstanceAttribute",
         ]
         Resource  = "arn:aws:ec2:*:*:instance/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        # Idle root-volume I/O demotion: drop a long-stopped box's gp3 volume to
+        # the free 3,000 IOPS / 125 MB/s baseline, restore its environment's tier
+        # on wake. volume/* rather than instance/* because ModifyVolume is
+        # authorized against the volume.
+        #
+        # Deliberately its own statement rather than folded into
+        # EC2ManageTaggedInstances, so this grant stays literally identical to
+        # the coordinator's own. The two policies disagreeing about volume/*
+        # caused a production outage (COORDINATOR-YA); a separate mirrored
+        # statement on both sides makes the symmetry checkable by eye.
+        Sid       = "EC2ModifyTaggedVolumes"
+        Effect    = "Allow"
+        Action    = ["ec2:ModifyVolume"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
         Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
       },
       {
