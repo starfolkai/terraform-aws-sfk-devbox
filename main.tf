@@ -479,6 +479,21 @@ resource "aws_iam_role_policy" "control" {
         Resource = ["arn:aws:cloudwatch:*:*:alarm:sfk-*-egress-*", "arn:aws:cloudwatch:*:*:alarm:EC2-PublicIPv4-Created"]
       },
       {
+        # Read-only. Lets Starfolk report a devbox's CPU and EBS disk-I/O
+        # statistics (per-operation latency, queue length, IOPS, throughput) so a
+        # slow box can be diagnosed without shell access to it. No write, no
+        # alarm mutation, and no access to any metric outside CloudWatch's own
+        # AWS-published namespaces.
+        #
+        # GetMetricData takes no resource-level condition -- AWS provides no way
+        # to scope it to a metric, namespace, or dimension -- so "*" is the only
+        # expressible form of this read.
+        Sid      = "CloudWatchReadMetrics"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:GetMetricData"]
+        Resource = "*"
+      },
+      {
         Sid       = "SSMSendCommandInstances"
         Effect    = "Allow"
         Action    = ["ssm:SendCommand"]
