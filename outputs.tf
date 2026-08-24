@@ -47,3 +47,17 @@ output "instance_profile" {
   value       = local.instance_profile_name
   description = "The devbox instance profile name (module-created, or your bring-your-own value)."
 }
+
+output "session_archive_bucket" {
+  # Echoed back so the hand-back payload carries it: Starfolk archives each
+  # terminated session's log to this bucket, and deletes the content with no copy
+  # when it is empty. Registering it is what turns the archive on — the IAM grant
+  # existing is not enough on its own.
+  value       = var.session_archive_bucket
+  description = "Bucket terminated sessions' agent logs are archived to; empty means the content is deleted instead."
+}
+
+output "session_archive_prefix" {
+  value       = local.session_archive_prefix_clean
+  description = "Key preamble inside session_archive_bucket (normalized, no leading/trailing slash)."
+}

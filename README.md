@@ -16,6 +16,7 @@ and apply it with your own credentials; Starfolk never receives a key.
 - **Security group** with posture-appropriate ingress.
 - **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
+- **Optionally, a write-only grant on a session-log bucket you already own** — see [Session log archive](#session-log-archive). No bucket is created.
 
 `terraform output -json` yields the values to send back to Starfolk.
 
@@ -96,6 +97,42 @@ credentials. Revoke any time by removing the role. Every AWS action lands in
 your CloudTrail. Starfolk manages boxes through AWS APIs by default; setting
 `enable_coordinator_access = true` additionally permits the coordinator to
 connect directly to TCP 7681 from `coordinator_ingress_cidrs`.
+
+## Session log archive
+
+Every agent session produces a JSONL transcript — prompts, model output, tool
+calls, command output, contents of files the agent read. While a session runs,
+Starfolk keeps that log in its own database because the product needs it (chat
+threads, session naming, forking). **When the session terminates, that content is
+removed from Starfolk's database.** Where it goes first is your choice:
+
+```hcl
+session_archive_bucket = "acme-starfolk-session-logs"  # a bucket in YOUR account
+session_archive_prefix = "starfolk/"                   # optional
+```
+
+- **Set it** and the module grants the control role `s3:PutObject` on `<bucket>/<prefix>*` — and nothing else. No
+  `s3:GetObject`, no `s3:ListBucket`, no delete. Starfolk can deposit a
+  transcript into your bucket and **cannot read one back**, including transcripts
+  it wrote itself. Objects land at
+  `<prefix>/<stage>/session-logs/workspace_id=…/session_id=…/terminated=…/rev=N.jsonl.gz`
+  — gzipped JSONL, one object per session (`rev=2` and up exist only when log
+  lines arrived after the first archive was written, and hold just that tail).
+- **Leave it empty** and the session's log content is simply **deleted** when the
+  session terminates, with no copy kept anywhere. It is never redirected to a
+  Starfolk-owned bucket.
+
+The module does not create the bucket: it is yours, with your encryption, your
+retention policy, your lifecycle rules, your key policy. Two practical notes if
+you enforce encryption — the upload sends no `x-amz-server-side-encryption`
+header, so your bucket's default encryption applies as-is; a bucket policy that
+*requires* SSE-KMS will therefore reject the writes, so use default encryption
+rather than a required-header policy (or tell us and we will send the header).
+
+Both values are in the hand-back so Starfolk can register them. The IAM grant
+existing is not by itself enough to turn the archive on — until the bucket is
+registered against your cloud account, terminated sessions' logs are deleted as
+above.
 
 ## Instance role: own it yourself
 
@@ -370,6 +407,11 @@ module "sfk_byoc" {
 
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod" # from Starfolk
   # external_id     = "..."   # omit to auto-generate; then send the output value back
+
+  # Optional — archive terminated sessions' logs into your own bucket instead of
+  # having their content deleted. Write-only for Starfolk; see "Session log archive".
+  # session_archive_bucket = "acme-starfolk-session-logs"
+  # session_archive_prefix = "starfolk/"
 }
 
 output "sfk_handback" {
@@ -382,6 +424,10 @@ output "sfk_handback" {
     subnet_ids        = module.sfk_byoc.subnet_ids
     security_group_id = module.sfk_byoc.security_group_id
     instance_profile  = module.sfk_byoc.instance_profile
+
+    # "" here means: delete each terminated session's log content, keep no copy.
+    session_archive_bucket = module.sfk_byoc.session_archive_bucket
+    session_archive_prefix = module.sfk_byoc.session_archive_prefix
   }
 }
 ```

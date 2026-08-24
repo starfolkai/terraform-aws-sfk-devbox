@@ -395,6 +395,46 @@ locals {
     ] : statement
     if length(local.ami_kms_key_arns) > 0
   ]
+
+  # Session log archive (optional). When you name a bucket, the control role — the
+  # role the Starfolk coordinator assumes into this account — may PUT a terminated
+  # session's agent transcript into it, and may do nothing else with it. No
+  # GetObject, no ListBucket, no delete: Starfolk can deposit your sessions' logs
+  # and cannot read them back, including the ones it wrote.
+  #
+  # This module does NOT create the bucket. It is yours: your retention, your
+  # encryption, your key policy, your lifecycle.
+  #
+  # Leave session_archive_bucket empty and no statement is emitted at all — on
+  # terminate Starfolk then deletes the session's log content from its own
+  # database instead of archiving it, and never writes it to a Starfolk-owned
+  # bucket.
+  #
+  # for-with-if (not a ?:) so the empty case is a filtered-out comprehension
+  # rather than an empty tuple — same reason as control_kms_statements above.
+  session_archive_prefix_clean = trim(var.session_archive_prefix, "/")
+  session_archive_key_pattern = (
+    local.session_archive_prefix_clean == ""
+    ? "*"
+    : "${local.session_archive_prefix_clean}/*"
+  )
+  control_session_archive_statements = [
+    for statement in [
+      {
+        Sid    = "SFKSessionLogArchiveWriteOnly"
+        Effect = "Allow"
+        # PutObject only: Starfolk writes one object per PUT and never
+        # multiparts, so no multipart action is granted — AbortMultipartUpload
+        # without CreateMultipartUpload/UploadPart authorizes nothing while
+        # reading like a broader grant in your policy review.
+        Action = ["s3:PutObject"]
+        Resource = (
+          "arn:aws:s3:::${var.session_archive_bucket}/${local.session_archive_key_pattern}"
+        )
+      },
+    ] : statement
+    if var.session_archive_bucket != ""
+  ]
 }
 
 resource "aws_iam_role_policy" "control" {
@@ -503,6 +543,6 @@ resource "aws_iam_role_policy" "control" {
         Action   = ["ssm:PutParameter", "ssm:DeleteParameter"]
         Resource = "arn:aws:ssm:*:*:parameter/sfk/*/nebula-bootstrap/*"
       },
-    ], local.control_kms_statements)
+    ], local.control_kms_statements, local.control_session_archive_statements)
   })
 }
