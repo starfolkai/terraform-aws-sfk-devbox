@@ -383,9 +383,9 @@ module "sfk_byoc" {
   # enable_coordinator_access = true
   # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]
 
-  # Optional, independently reviewed control-role capabilities (default false):
-  # enable_cloudwatch_read_metrics   = true
-  # enable_ec2_modify_tagged_volumes = true
+  # Independently configurable control-role capabilities (default true):
+  # enable_cloudwatch_read_metrics   = false
+  # enable_ec2_modify_tagged_volumes = false
 
   # Optional: let one of your workloads reach services agents run on the boxes.
   # Defaults to TCP+UDP 1024-65535 from the SG(s) you list; narrow it if you can.
