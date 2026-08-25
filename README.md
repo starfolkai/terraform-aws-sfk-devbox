@@ -17,6 +17,27 @@ and apply it with your own credentials; Starfolk never receives a key.
 - **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
+Two additional control-role capabilities are independently opt-in and default
+off, so upgrading the module changes neither permission unless you select it:
+
+- **`enable_cloudwatch_read_metrics`** grants read-only
+  `cloudwatch:GetMetricData` on `*` for CPU and EBS I/O diagnostics. CloudWatch
+  offers no resource-level scope for this action.
+- **`enable_ec2_modify_tagged_volumes`** grants `ec2:ModifyVolume` on volumes
+  tagged `sfk:<stage>:managed`, plus the unscopable read-only
+  `ec2:DescribeVolumes` and `ec2:DescribeVolumesModifications` calls that feed
+  it. This enables root-volume growth and gp3 IOPS/throughput adjustment.
+
+They can be reviewed and enabled separately:
+
+```hcl
+enable_cloudwatch_read_metrics      = true
+enable_ec2_modify_tagged_volumes    = true
+```
+
+With either setting left off, the coordinator reports that operation as
+unavailable and continues normal box lifecycle management.
+
 `terraform output -json` yields the values to send back to Starfolk.
 
 ## Subnets: create or bring your own
@@ -360,6 +381,10 @@ module "sfk_byoc" {
   # Optional legacy coordinator path:
   # enable_coordinator_access = true
   # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]
+
+  # Optional, independently reviewed control-role capabilities (default false):
+  # enable_cloudwatch_read_metrics   = true
+  # enable_ec2_modify_tagged_volumes = true
 
   # Optional: let one of your workloads reach services agents run on the boxes.
   # Defaults to TCP+UDP 1024-65535 from the SG(s) you list; narrow it if you can.
