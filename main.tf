@@ -396,9 +396,9 @@ locals {
     if length(local.ami_kms_key_arns) > 0
   ]
 
-  # Optional customer-reviewed grants. Keep the volume reads behind the same
+  # Independently configurable grants. Keep the volume reads behind the same
   # switch as ModifyVolume: although read-only, they exist only to feed that
-  # mutation and a default-off upgrade must add none of the grant's actions.
+  # mutation, so disabling volume changes removes all of the grant's actions.
   control_volume_statements = [
     for statement in [
       {

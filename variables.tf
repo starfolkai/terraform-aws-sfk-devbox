@@ -278,26 +278,26 @@ variable "enable_nebula_ingress" {
 
 variable "enable_cloudwatch_read_metrics" {
   type        = bool
-  default     = false
+  default     = true
   description = <<-EOT
     Grant the Starfolk control role `cloudwatch:GetMetricData` on `*`, which lets
     Starfolk read AWS-published CPU and EBS I/O metrics while diagnosing devbox
     performance. CloudWatch does not support resource-level scoping for this
-    action. Defaults to false; metric diagnostics report that metrics are
-    unavailable when the grant is disabled.
+    action. Defaults to true; set this to false to make metric diagnostics
+    report that metrics are unavailable.
   EOT
 }
 
 variable "enable_ec2_modify_tagged_volumes" {
   type        = bool
-  default     = false
+  default     = true
   description = <<-EOT
     Grant the Starfolk control role `ec2:ModifyVolume` on SFK-managed volumes,
     plus the unscopable read-only `ec2:DescribeVolumes` and
     `ec2:DescribeVolumesModifications` actions that feed volume changes. This
     enables root-volume growth and automatic gp3 IOPS/throughput adjustment.
-    Defaults to false; those operations fail closed without disrupting normal
-    box lifecycle management.
+    Defaults to true; set this to false to make those operations fail closed
+    without disrupting normal box lifecycle management.
   EOT
 }
 

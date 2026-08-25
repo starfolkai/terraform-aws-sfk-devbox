@@ -17,8 +17,9 @@ and apply it with your own credentials; Starfolk never receives a key.
 - **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
-Two additional control-role capabilities are independently opt-in and default
-off, so upgrading the module changes neither permission unless you select it:
+Two additional control-role capabilities are independently configurable and
+default on, so they work after upgrading while still allowing separate security
+decisions:
 
 - **`enable_cloudwatch_read_metrics`** grants read-only
   `cloudwatch:GetMetricData` on `*` for CPU and EBS I/O diagnostics. CloudWatch
@@ -28,14 +29,14 @@ off, so upgrading the module changes neither permission unless you select it:
   `ec2:DescribeVolumes` and `ec2:DescribeVolumesModifications` calls that feed
   it. This enables root-volume growth and gp3 IOPS/throughput adjustment.
 
-They can be reviewed and enabled separately:
+They can be disabled separately:
 
 ```hcl
-enable_cloudwatch_read_metrics      = true
-enable_ec2_modify_tagged_volumes    = true
+enable_cloudwatch_read_metrics      = false
+enable_ec2_modify_tagged_volumes    = false
 ```
 
-With either setting left off, the coordinator reports that operation as
+With either setting turned off, the coordinator reports that operation as
 unavailable and continues normal box lifecycle management.
 
 `terraform output -json` yields the values to send back to Starfolk.
