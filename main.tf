@@ -395,6 +395,42 @@ locals {
     ] : statement
     if length(local.ami_kms_key_arns) > 0
   ]
+
+  # Independently configurable grants. Keep the volume reads behind the same
+  # switch as ModifyVolume: although read-only, they exist only to feed that
+  # mutation, so disabling volume changes removes all of the grant's actions.
+  control_volume_statements = [
+    for statement in [
+      {
+        Sid      = "EC2DescribeVolumes"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications"]
+        Resource = "*"
+      },
+      {
+        Sid       = "EC2ModifyTaggedVolumes"
+        Effect    = "Allow"
+        Action    = ["ec2:ModifyVolume"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+    ] : statement
+    if var.enable_ec2_modify_tagged_volumes
+  ]
+
+  control_metric_statements = [
+    for statement in [
+      {
+        # GetMetricData has no resource-level condition, so "*" is the only
+        # expressible resource. The action is read-only.
+        Sid      = "CloudWatchReadMetrics"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:GetMetricData"]
+        Resource = "*"
+      },
+    ] : statement
+    if var.enable_cloudwatch_read_metrics
+  ]
 }
 
 resource "aws_iam_role_policy" "control" {
@@ -410,11 +446,6 @@ resource "aws_iam_role_policy" "control" {
           "ec2:DescribeInstances", "ec2:DescribeInstanceAttribute", "ec2:DescribeInstanceTypes",
           "ec2:DescribeTags", "ec2:DescribeImages", "ec2:DescribeAddresses",
           "ec2:DescribeSecurityGroups", "ec2:DescribeSubnets", "ec2:DescribeKeyPairs",
-          # DescribeVolumes / DescribeVolumesModifications support no
-          # resource-level scoping, so they can only be granted on "*".
-          # They are read-only, and the mutation they feed (ModifyVolume,
-          # see EC2ModifyTaggedVolumes) is tag-scoped.
-          "ec2:DescribeVolumes", "ec2:DescribeVolumesModifications",
         ]
         Resource = "*"
       },
@@ -449,23 +480,6 @@ resource "aws_iam_role_policy" "control" {
         Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
       },
       {
-        # Idle root-volume I/O demotion: drop a long-stopped box's gp3 volume to
-        # the free 3,000 IOPS / 125 MB/s baseline, restore its environment's tier
-        # on wake. volume/* rather than instance/* because ModifyVolume is
-        # authorized against the volume.
-        #
-        # Deliberately its own statement rather than folded into
-        # EC2ManageTaggedInstances, so this grant stays literally identical to
-        # the coordinator's own. The two policies disagreeing about volume/*
-        # caused a production outage (COORDINATOR-YA); a separate mirrored
-        # statement on both sides makes the symmetry checkable by eye.
-        Sid       = "EC2ModifyTaggedVolumes"
-        Effect    = "Allow"
-        Action    = ["ec2:ModifyVolume"]
-        Resource  = "arn:aws:ec2:*:*:volume/*"
-        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
-      },
-      {
         Sid       = "PassRole"
         Effect    = "Allow"
         Action    = "iam:PassRole"
@@ -477,21 +491,6 @@ resource "aws_iam_role_policy" "control" {
         Effect   = "Allow"
         Action   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms"]
         Resource = ["arn:aws:cloudwatch:*:*:alarm:sfk-*-egress-*", "arn:aws:cloudwatch:*:*:alarm:EC2-PublicIPv4-Created"]
-      },
-      {
-        # Read-only. Lets Starfolk report a devbox's CPU and EBS disk-I/O
-        # statistics (per-operation latency, queue length, IOPS, throughput) so a
-        # slow box can be diagnosed without shell access to it. No write, no
-        # alarm mutation, and no access to any metric outside CloudWatch's own
-        # AWS-published namespaces.
-        #
-        # GetMetricData takes no resource-level condition -- AWS provides no way
-        # to scope it to a metric, namespace, or dimension -- so "*" is the only
-        # expressible form of this read.
-        Sid      = "CloudWatchReadMetrics"
-        Effect   = "Allow"
-        Action   = ["cloudwatch:GetMetricData"]
-        Resource = "*"
       },
       {
         Sid       = "SSMSendCommandInstances"
@@ -518,6 +517,10 @@ resource "aws_iam_role_policy" "control" {
         Action   = ["ssm:PutParameter", "ssm:DeleteParameter"]
         Resource = "arn:aws:ssm:*:*:parameter/sfk/*/nebula-bootstrap/*"
       },
-    ], local.control_kms_statements)
+      ],
+      local.control_volume_statements,
+      local.control_metric_statements,
+      local.control_kms_statements,
+    )
   })
 }

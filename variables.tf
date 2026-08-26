@@ -276,6 +276,31 @@ variable "enable_nebula_ingress" {
   description = "Open UDP 51820 (Nebula overlay peer traffic) from 0.0.0.0/0. CA-authenticated; unauthenticated UDP is silently dropped. Harmless no-op for postures that don't use the overlay."
 }
 
+variable "enable_cloudwatch_read_metrics" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Grant the Starfolk control role `cloudwatch:GetMetricData` on `*`, which lets
+    Starfolk read AWS-published CPU and EBS I/O metrics while diagnosing devbox
+    performance. CloudWatch does not support resource-level scoping for this
+    action. Defaults to true; set this to false to make metric diagnostics
+    report that metrics are unavailable.
+  EOT
+}
+
+variable "enable_ec2_modify_tagged_volumes" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Grant the Starfolk control role `ec2:ModifyVolume` on SFK-managed volumes,
+    plus the unscopable read-only `ec2:DescribeVolumes` and
+    `ec2:DescribeVolumesModifications` actions that feed volume changes. This
+    enables root-volume growth and automatic gp3 IOPS/throughput adjustment.
+    Defaults to true; set this to false to make those operations fail closed
+    without disrupting normal box lifecycle management.
+  EOT
+}
+
 variable "sfk_principal_arn" {
   type        = string
   default     = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod"
