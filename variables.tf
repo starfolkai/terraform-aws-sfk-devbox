@@ -292,12 +292,15 @@ variable "enable_ec2_modify_tagged_volumes" {
   type        = bool
   default     = true
   description = <<-EOT
-    Grant the Starfolk control role `ec2:ModifyVolume` on SFK-managed volumes,
-    plus the unscopable read-only `ec2:DescribeVolumes` and
-    `ec2:DescribeVolumesModifications` actions that feed volume changes. This
-    enables root-volume growth and automatic gp3 IOPS/throughput adjustment.
-    Defaults to true; set this to false to make those operations fail closed
-    without disrupting normal box lifecycle management.
+    Grant the Starfolk control role `ec2:ModifyVolume` on SFK-managed volumes.
+    This enables root-volume growth and automatic gp3 IOPS/throughput
+    adjustment. Defaults to true; set this to false to make those volume
+    changes fail closed without disrupting normal box lifecycle management.
+
+    Only the mutation is gated. The read-only `ec2:DescribeVolumes` and
+    `ec2:DescribeVolumesModifications` actions are always granted, because the
+    dashboard reads every box's root-volume size whether or not you allow
+    resizes.
   EOT
 }
 

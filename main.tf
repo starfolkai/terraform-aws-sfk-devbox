@@ -396,17 +396,13 @@ locals {
     if length(local.ami_kms_key_arns) > 0
   ]
 
-  # Independently configurable grants. Keep the volume reads behind the same
-  # switch as ModifyVolume: although read-only, they exist only to feed that
-  # mutation, so disabling volume changes removes all of the grant's actions.
+  # Only the *mutation* is configurable. The volume reads are unconditional
+  # (see EC2DescribeVolumes, in the always-granted statements below): gating
+  # them too made "I don't want Starfolk resizing my disks" also mean "Starfolk
+  # cannot tell me how big my disk is", which surfaces in the dashboard as a
+  # hard error on every box rather than a resize button that isn't offered.
   control_volume_statements = [
     for statement in [
-      {
-        Sid      = "EC2DescribeVolumes"
-        Effect   = "Allow"
-        Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications"]
-        Resource = "*"
-      },
       {
         Sid       = "EC2ModifyTaggedVolumes"
         Effect    = "Allow"
@@ -447,6 +443,18 @@ resource "aws_iam_role_policy" "control" {
           "ec2:DescribeTags", "ec2:DescribeImages", "ec2:DescribeAddresses",
           "ec2:DescribeSecurityGroups", "ec2:DescribeSubnets", "ec2:DescribeKeyPairs",
         ]
+        Resource = "*"
+      },
+      {
+        # Read-only and unconditional, unlike the ModifyVolume grant these feed
+        # (see control_volume_statements). The dashboard reads a box's root
+        # volume size on every view, so withholding these does not decline a
+        # mutation — it breaks a display. DescribeVolumes and
+        # DescribeVolumesModifications support no resource-level scoping, so
+        # "*" is the only expressible resource, same as EC2Describe above.
+        Sid      = "EC2DescribeVolumes"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications"]
         Resource = "*"
       },
       {

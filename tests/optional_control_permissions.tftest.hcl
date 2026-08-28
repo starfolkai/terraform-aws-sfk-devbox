@@ -83,9 +83,24 @@ run "volume_changes_can_be_disabled_independently" {
   assert {
     condition = length([
       for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
-      if contains(["EC2DescribeVolumes", "EC2ModifyTaggedVolumes"], statement.Sid)
+      if statement.Sid == "EC2ModifyTaggedVolumes"
     ]) == 0
-    error_message = "Disabling volume changes must remove both EC2 volume statements."
+    error_message = "Disabling volume changes must remove the EC2ModifyTaggedVolumes grant."
+  }
+
+  # The reads are not part of the switch: a customer who declines resizes still
+  # sees their boxes' disk sizes in the dashboard.
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
+      if statement.Sid == "EC2DescribeVolumes"
+      ]) == {
+      Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications"]
+      Effect   = "Allow"
+      Resource = "*"
+      Sid      = "EC2DescribeVolumes"
+    }
+    error_message = "Disabling volume changes must not disable the read-only volume describes."
   }
 
   assert {

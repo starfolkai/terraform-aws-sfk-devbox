@@ -25,9 +25,11 @@ decisions:
   `cloudwatch:GetMetricData` on `*` for CPU and EBS I/O diagnostics. CloudWatch
   offers no resource-level scope for this action.
 - **`enable_ec2_modify_tagged_volumes`** grants `ec2:ModifyVolume` on volumes
-  tagged `sfk:<stage>:managed`, plus the unscopable read-only
-  `ec2:DescribeVolumes` and `ec2:DescribeVolumesModifications` calls that feed
-  it. This enables root-volume growth and gp3 IOPS/throughput adjustment.
+  tagged `sfk:<stage>:managed`, enabling root-volume growth and gp3
+  IOPS/throughput adjustment. Only the mutation is gated: the read-only
+  `ec2:DescribeVolumes` and `ec2:DescribeVolumesModifications` calls are always
+  granted, because the dashboard shows every box's disk size whether or not you
+  allow resizes.
 
 They can be disabled separately:
 
