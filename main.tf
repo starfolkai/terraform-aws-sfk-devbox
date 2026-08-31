@@ -482,6 +482,11 @@ resource "aws_iam_role_policy" "control" {
         Effect = "Allow"
         Action = [
           "ec2:TerminateInstances", "ec2:StopInstances", "ec2:StartInstances",
+          # RebootInstances backs `sfk box reboot`. It is strictly weaker than
+          # the Stop/Start pair already granted here: it cannot change an
+          # attribute, cannot move the instance to another host, and leaves the
+          # instance running throughout.
+          "ec2:RebootInstances",
           "ec2:CreateTags", "ec2:DeleteTags", "ec2:ModifyInstanceAttribute",
         ]
         Resource  = "arn:aws:ec2:*:*:instance/*"
