@@ -460,7 +460,7 @@ resource "aws_iam_role_policy" "control" {
       {
         Sid       = "EC2ArchiveTaggedVolumes"
         Effect    = "Allow"
-        Action    = ["ec2:CreateSnapshot", "ec2:DeleteVolume"]
+        Action    = ["ec2:CreateSnapshot"]
         Resource  = "arn:aws:ec2:*:*:volume/*"
         Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
       },
