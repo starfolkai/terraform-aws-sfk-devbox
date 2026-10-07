@@ -414,6 +414,63 @@ locals {
     if var.enable_ec2_modify_tagged_volumes
   ]
 
+  # Regenerate Image: snapshot a scrubbed warm box's root volume and share the
+  # snapshot to Starfolk, which copies it and registers the image in its own
+  # account (devbox AMIs stay Starfolk-owned), then deletes the temporary
+  # snapshot here. Every snapshot it creates carries the managed tag, and
+  # sharing may only add the Starfolk account.
+  sfk_account_id = split(":", var.sfk_principal_arn)[4]
+  control_image_snapshot_statements = [
+    for statement in [
+      {
+        Sid       = "EC2SnapshotManagedVolumes"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateSnapshot"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid       = "EC2CreateManagedSnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateSnapshot"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { ("aws:RequestTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid       = "EC2TagSnapshotsOnCreate"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateTags"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { "ec2:CreateAction" = "CreateSnapshot" } }
+      },
+      {
+        Sid      = "EC2ShareManagedSnapshotsWithStarfolk"
+        Effect   = "Allow"
+        Action   = ["ec2:ModifySnapshotAttribute"]
+        Resource = "arn:aws:ec2:*::snapshot/*"
+        Condition = {
+          StringEquals                = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" }
+          "ForAllValues:StringEquals" = { "ec2:Add/userId" = [local.sfk_account_id] }
+        }
+      },
+      {
+        Sid       = "EC2DeleteManagedSnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:DeleteSnapshot"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        # DescribeSnapshots supports no resource-level scoping; read-only.
+        Sid      = "EC2DescribeSnapshots"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeSnapshots"]
+        Resource = "*"
+      },
+    ] : statement
+    if var.enable_ec2_image_snapshots
+  ]
+
   control_metric_statements = [
     for statement in [
       {
@@ -560,6 +617,7 @@ resource "aws_iam_role_policy" "control" {
       },
       ],
       local.control_volume_statements,
+      local.control_image_snapshot_statements,
       local.control_metric_statements,
       local.control_kms_statements,
     )
