@@ -95,7 +95,7 @@ run "volume_changes_can_be_disabled_independently" {
       for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
       if statement.Sid == "EC2DescribeVolumes"
       ]) == {
-      Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications"]
+      Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications", "ec2:DescribeSnapshots"]
       Effect   = "Allow"
       Resource = "*"
       Sid      = "EC2DescribeVolumes"
