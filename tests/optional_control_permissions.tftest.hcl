@@ -116,3 +116,71 @@ run "volume_changes_can_be_disabled_independently" {
     error_message = "Disabling volume changes must not disable CloudWatch metric reads."
   }
 }
+
+run "image_snapshots_are_off_by_default" {
+  command = apply
+
+  override_resource {
+    target = aws_security_group.this
+    values = {
+      arn = "arn:aws:ec2:us-east-2:123456789012:security-group/sg-0123456789abcdef0"
+    }
+  }
+
+  assert {
+    condition = length([
+      for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
+      if contains([
+        "EC2SnapshotManagedVolumes",
+        "EC2CreateManagedSnapshots",
+        "EC2TagSnapshotsOnCreate",
+        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2DeleteManagedSnapshots",
+      ], statement.Sid)
+    ]) == 0
+    error_message = "Image regeneration snapshot grants must be opt-in (box recovery's are separate)."
+  }
+}
+
+run "image_snapshots_share_only_with_starfolk" {
+  command = apply
+
+  variables {
+    enable_ec2_image_snapshots = true
+  }
+
+  override_resource {
+    target = aws_security_group.this
+    values = {
+      arn = "arn:aws:ec2:us-east-2:123456789012:security-group/sg-0123456789abcdef0"
+    }
+  }
+
+  assert {
+    condition = toset([
+      for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement.Sid
+      if contains([
+        "EC2SnapshotManagedVolumes",
+        "EC2CreateManagedSnapshots",
+        "EC2TagSnapshotsOnCreate",
+        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2DeleteManagedSnapshots",
+      ], statement.Sid)
+      ]) == toset([
+      "EC2SnapshotManagedVolumes",
+      "EC2CreateManagedSnapshots",
+      "EC2TagSnapshotsOnCreate",
+      "EC2ShareManagedSnapshotsWithStarfolk",
+      "EC2DeleteManagedSnapshots",
+    ])
+    error_message = "Enabling image snapshots must grant the full snapshot-and-share set."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
+      if statement.Sid == "EC2ShareManagedSnapshotsWithStarfolk"
+    ]).Condition["ForAllValues:StringEquals"]["ec2:Add/userId"] == ["450410490644"]
+    error_message = "Snapshots may only be shared with the Starfolk account of sfk_principal_arn."
+  }
+}
