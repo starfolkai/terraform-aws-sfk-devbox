@@ -41,6 +41,21 @@ enable_ec2_modify_tagged_volumes    = false
 With either setting turned off, the coordinator reports that operation as
 unavailable and continues normal box lifecycle management.
 
+The control role also grants **box-recovery snapshot capture and cleanup**,
+independently of these settings. Snapshot creation is limited to volumes tagged
+`sfk:<stage>:managed=true`; new snapshots must carry
+`sfk:purpose=box-recovery`, and snapshot deletion requires that same tag.
+Read-only snapshot discovery and tagging at creation are also granted.
+
+When Starfolk enables recovery capture, it keeps the box stopped until all disk
+snapshots complete, then terminates the instance and its disks. Snapshots remain
+**in your AWS account**, with EBS snapshot storage charged to you, for **14 days
+after confirmed instance termination** before the coordinator deletes them.
+Capture or cleanup failures are retried once, then alert Starfolk and require
+manual unblocking; retained volumes or snapshots can continue incurring charges
+beyond that period. Upgrading this module grants permissions only: it does not
+enable capture or provide a user restore workflow.
+
 `terraform output -json` yields the values to send back to Starfolk.
 
 ## Subnets: create or bring your own

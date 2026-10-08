@@ -454,8 +454,36 @@ resource "aws_iam_role_policy" "control" {
         # "*" is the only expressible resource, same as EC2Describe above.
         Sid      = "EC2DescribeVolumes"
         Effect   = "Allow"
-        Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications"]
+        Action   = ["ec2:DescribeVolumes", "ec2:DescribeVolumesModifications", "ec2:DescribeSnapshots"]
         Resource = "*"
+      },
+      {
+        Sid       = "EC2ArchiveTaggedVolumes"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateSnapshot"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid       = "EC2CreateRecoverySnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateSnapshot"]
+        Resource  = "arn:aws:ec2:*:*:snapshot/*"
+        Condition = { StringEquals = { "aws:RequestTag/sfk:purpose" = "box-recovery" } }
+      },
+      {
+        Sid       = "EC2TagRecoverySnapshotsAtCreation"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateTags"]
+        Resource  = "arn:aws:ec2:*:*:snapshot/*"
+        Condition = { StringEquals = { "ec2:CreateAction" = "CreateSnapshot" } }
+      },
+      {
+        Sid       = "EC2DeleteRecoverySnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:DeleteSnapshot"]
+        Resource  = "arn:aws:ec2:*:*:snapshot/*"
+        Condition = { StringEquals = { "aws:ResourceTag/sfk:purpose" = "box-recovery" } }
       },
       {
         Sid       = "EC2RunInstances"
