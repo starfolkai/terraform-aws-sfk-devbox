@@ -314,7 +314,8 @@ variable "enable_ec2_image_snapshots" {
     snapshots to add the Starfolk account only, and `ec2:DeleteSnapshot` on
     them. Starfolk copies the shared snapshot into its own account, registers
     the image there, shares it back to this account, and deletes the temporary
-    snapshot here.
+    snapshot here. (`ec2:DescribeSnapshots` is already granted
+    unconditionally for box recovery.)
 
     Off by default: enabling it lets Starfolk read a copy of a devbox's root
     disk. The box is scrubbed of its credentials first and terminated

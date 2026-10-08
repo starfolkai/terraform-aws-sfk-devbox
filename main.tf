@@ -460,13 +460,6 @@ locals {
         Resource  = "arn:aws:ec2:*::snapshot/*"
         Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
       },
-      {
-        # DescribeSnapshots supports no resource-level scoping; read-only.
-        Sid      = "EC2DescribeSnapshots"
-        Effect   = "Allow"
-        Action   = ["ec2:DescribeSnapshots"]
-        Resource = "*"
-      },
     ] : statement
     if var.enable_ec2_image_snapshots
   ]

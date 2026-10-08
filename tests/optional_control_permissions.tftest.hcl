@@ -130,9 +130,15 @@ run "image_snapshots_are_off_by_default" {
   assert {
     condition = length([
       for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
-      if startswith(statement.Sid, "EC2") && strcontains(statement.Sid, "Snapshot")
+      if contains([
+        "EC2SnapshotManagedVolumes",
+        "EC2CreateManagedSnapshots",
+        "EC2TagSnapshotsOnCreate",
+        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2DeleteManagedSnapshots",
+      ], statement.Sid)
     ]) == 0
-    error_message = "Image snapshot grants must be opt-in."
+    error_message = "Image regeneration snapshot grants must be opt-in (box recovery's are separate)."
   }
 }
 
@@ -159,7 +165,6 @@ run "image_snapshots_share_only_with_starfolk" {
         "EC2TagSnapshotsOnCreate",
         "EC2ShareManagedSnapshotsWithStarfolk",
         "EC2DeleteManagedSnapshots",
-        "EC2DescribeSnapshots",
       ], statement.Sid)
       ]) == toset([
       "EC2SnapshotManagedVolumes",
@@ -167,7 +172,6 @@ run "image_snapshots_share_only_with_starfolk" {
       "EC2TagSnapshotsOnCreate",
       "EC2ShareManagedSnapshotsWithStarfolk",
       "EC2DeleteManagedSnapshots",
-      "EC2DescribeSnapshots",
     ])
     error_message = "Enabling image snapshots must grant the full snapshot-and-share set."
   }
