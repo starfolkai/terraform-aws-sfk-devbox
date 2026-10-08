@@ -56,6 +56,31 @@ manual unblocking; retained volumes or snapshots can continue incurring charges
 beyond that period. Upgrading this module grants permissions only: it does not
 enable capture or provide a user restore workflow.
 
+**Image regeneration snapshots are opt-in** (`enable_ec2_image_snapshots`,
+default `false`). Starfolk can regenerate an environment's devbox image from one
+of its warm boxes. For a box in your account, that means Starfolk takes a copy of
+the box's root disk. Turning this on grants the control role:
+
+- `ec2:CreateSnapshot` on volumes tagged `sfk:<stage>:managed`, only into
+  snapshots that carry the same tag;
+- `ec2:ModifySnapshotAttribute` on those snapshots, adding **only** the Starfolk
+  account (the account in `sfk_principal_arn`) to their create-volume
+  permission;
+- `ec2:DeleteSnapshot` on those snapshots.
+
+Before the snapshot, Starfolk wipes the box's credentials and per-box identity,
+and the box is terminated afterwards. Starfolk copies the shared snapshot into
+its own account, registers the image there, and shares the image and its
+snapshot back to your account. It then deletes the temporary snapshot in your
+account. Images stay Starfolk-owned, like every devbox image you launch. With
+the setting off, a regeneration for your account fails immediately with a
+message naming this variable. The box it claimed is retired and replaced, and
+nothing else changes.
+
+```hcl
+enable_ec2_image_snapshots = true
+```
+
 `terraform output -json` yields the values to send back to Starfolk.
 
 ## Subnets: create or bring your own
