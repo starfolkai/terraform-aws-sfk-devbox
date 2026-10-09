@@ -486,6 +486,62 @@ resource "aws_iam_role_policy" "control" {
         Condition = { StringEquals = { "aws:ResourceTag/sfk:purpose" = "box-recovery" } }
       },
       {
+        Sid      = "EC2RestoreFromRecoverySnapshots"
+        Effect   = "Allow"
+        Action   = ["ec2:CreateVolume"]
+        Resource = "arn:aws:ec2:*:*:snapshot/*"
+        Condition = {
+          StringEquals = { "aws:ResourceTag/sfk:purpose" = "box-recovery" }
+          Null         = { "aws:ResourceTag/sfk:box-archive" = "false" }
+        }
+      },
+      {
+        Sid      = "EC2CreateRestoreVolumes"
+        Effect   = "Allow"
+        Action   = ["ec2:CreateVolume"]
+        Resource = "arn:aws:ec2:*:*:volume/*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/sfk:purpose"                = "box-restore"
+            ("aws:RequestTag/sfk:${var.stage}:managed") = "true"
+          }
+          Null = { "aws:RequestTag/sfk:box-restore" = "false" }
+        }
+      },
+      {
+        Sid       = "EC2TagRestoreVolumesAtCreation"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateTags"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
+        Condition = { StringEquals = { "ec2:CreateAction" = "CreateVolume" } }
+      },
+      {
+        Sid      = "EC2ManageRestoreVolumes"
+        Effect   = "Allow"
+        Action   = ["ec2:AttachVolume", "ec2:DetachVolume", "ec2:DeleteVolume"]
+        Resource = "arn:aws:ec2:*:*:volume/*"
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/sfk:purpose"                = "box-restore"
+            ("aws:ResourceTag/sfk:${var.stage}:managed") = "true"
+          }
+          Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
+        }
+      },
+      {
+        Sid      = "EC2AttachRestoreInstances"
+        Effect   = "Allow"
+        Action   = ["ec2:AttachVolume", "ec2:DetachVolume"]
+        Resource = "arn:aws:ec2:*:*:instance/*"
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/sfk:purpose"                = "box-restore"
+            ("aws:ResourceTag/sfk:${var.stage}:managed") = "true"
+          }
+          Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
+        }
+      },
+      {
         Sid       = "EC2RunInstances"
         Effect    = "Allow"
         Action    = "ec2:RunInstances"
