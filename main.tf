@@ -518,7 +518,7 @@ resource "aws_iam_role_policy" "control" {
       {
         Sid      = "EC2ManageRestoreVolumes"
         Effect   = "Allow"
-        Action   = ["ec2:AttachVolume", "ec2:DetachVolume", "ec2:DeleteVolume"]
+        Action   = ["ec2:AttachVolume"]
         Resource = "arn:aws:ec2:*:*:volume/*"
         Condition = {
           StringEquals = {
@@ -531,7 +531,7 @@ resource "aws_iam_role_policy" "control" {
       {
         Sid      = "EC2AttachRestoreInstances"
         Effect   = "Allow"
-        Action   = ["ec2:AttachVolume", "ec2:DetachVolume"]
+        Action   = ["ec2:AttachVolume"]
         Resource = "arn:aws:ec2:*:*:instance/*"
         Condition = {
           StringEquals = {

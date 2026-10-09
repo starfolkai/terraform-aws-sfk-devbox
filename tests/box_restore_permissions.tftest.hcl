@@ -22,7 +22,7 @@ run "restore_permissions_require_positive_tags" {
       ]) == {
       Sid      = "EC2ManageRestoreVolumes"
       Effect   = "Allow"
-      Action   = ["ec2:AttachVolume", "ec2:DetachVolume", "ec2:DeleteVolume"]
+      Action   = ["ec2:AttachVolume"]
       Resource = "arn:aws:ec2:*:*:volume/*"
       Condition = {
         StringEquals = {
@@ -32,7 +32,7 @@ run "restore_permissions_require_positive_tags" {
         Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
       }
     }
-    error_message = "Only tagged restore volumes can be detached, attached or deleted."
+    error_message = "Only positively tagged recovery copies can be attached."
   }
   assert {
     condition = one([
