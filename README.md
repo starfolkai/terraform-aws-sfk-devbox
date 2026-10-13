@@ -124,7 +124,10 @@ enable_cost_reporting = true
 # cost_reporting_scope = "tagged"   # only if the account is shared
 ```
 
-Send the `cost_report_url` output to Starfolk along with the other values. The
+The `cost_report_url` output is part of the hand-back you already send to
+Starfolk (see [`examples/wrapper/`](examples/wrapper/)), so there's nothing
+extra to send. If your own wrapper builds the hand-back field by field, add it.
+The
 first data arrives within about 24 hours. If a service control policy blocks
 member accounts from `bcm-data-exports:*`, the apply fails at the export: allow
 it for this account. Setting `enable_cost_reporting = false` deletes the export
