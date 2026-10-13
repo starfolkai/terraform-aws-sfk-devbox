@@ -131,7 +131,8 @@ The
 first data arrives within about 24 hours. If a service control policy blocks
 member accounts from `bcm-data-exports:*`, the apply fails at the export: allow
 it for this account. Setting `enable_cost_reporting = false` deletes the export
-and Starfolk's access. The bucket is deleted only if it's empty, or if
+and Starfolk's access, and removes the bucket. If the bucket still holds
+reports, that apply stops at the bucket: empty it first, or set
 `cost_report_bucket_force_destroy = true`.
 
 `terraform output -json` yields the values to send back to Starfolk.
