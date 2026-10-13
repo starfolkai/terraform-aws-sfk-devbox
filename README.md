@@ -90,6 +90,47 @@ nothing else changes.
 enable_ec2_image_snapshots = true
 ```
 
+**Cost reporting is opt-in** (`enable_cost_reporting`, default `false`). It lets
+Starfolk show the AWS cost of your boxes, per environment and per user, on its
+billing page. It is information only: Starfolk does not invoice this spend. When
+it's on, the module creates:
+
+- a private S3 bucket (`cost_report_bucket_name`, default
+  `<name_prefix>-cost-report-<account_id>`, in `region`). It is owner-only,
+  blocks public access, is encrypted and versioned, denies non-HTTPS access,
+  and expires deliveries after `cost_report_retention_days` (default 400);
+- an AWS Data Export (CUR 2.0, hourly, Parquet) that writes into that bucket
+  under `cost_report_prefix`, refreshed by AWS up to three times a day. It
+  exports only the columns Starfolk reads;
+- a bucket-policy grant letting the control role list and read **only** that
+  prefix. The control role's own policy is unchanged.
+
+`cost_reporting_scope` decides what the export contains:
+
+- **`"account"` (default)**: every cost line in this account. Use this when the
+  account is dedicated to Starfolk. An export created in an account covers
+  only that account's costs, even inside an AWS Organization, so nothing else
+  of yours is included. Tags aren't exported.
+- **`"tagged"`**: only lines for resources tagged `sfk:stage = <stage>`, for an
+  account shared with other workloads. It also exports `resource_tags`, but
+  only for those rows. This needs one extra step outside this module: in the
+  account that pays your AWS bill (your Organization's management account),
+  open **Billing and Cost Management → Cost allocation tags** and activate
+  `sfk:stage`, `sfk:workspace_id` and `sfk:environment_id`. Until then the
+  export is empty. AWS can backfill activated tags up to 12 months.
+
+```hcl
+enable_cost_reporting = true
+# cost_reporting_scope = "tagged"   # only if the account is shared
+```
+
+Send the `cost_report_url` output to Starfolk along with the other values. The
+first data arrives within about 24 hours. If a service control policy blocks
+member accounts from `bcm-data-exports:*`, the apply fails at the export: allow
+it for this account. Setting `enable_cost_reporting = false` deletes the export
+and Starfolk's access. The bucket is deleted only if it's empty, or if
+`cost_report_bucket_force_destroy = true`.
+
 `terraform output -json` yields the values to send back to Starfolk.
 
 ## Subnets: create or bring your own
