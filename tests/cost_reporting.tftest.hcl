@@ -102,7 +102,8 @@ run "control_role_reads_only_the_prefix" {
   assert {
     condition = alltrue([
       for s in jsondecode(aws_s3_bucket_policy.cost_report[0].policy).Statement :
-      s.Effect == "Deny" || s.Sid == "AllowDataExportsDelivery" || contains(["s3:GetObject", "s3:ListBucket"], one(flatten([s.Action])))
+      alltrue([for a in flatten([s.Action]) : contains(["s3:GetObject", "s3:ListBucket"], a)])
+      if s.Effect != "Deny" && s.Sid != "AllowDataExportsDelivery"
     ])
     error_message = "The control role may only GetObject/ListBucket."
   }
