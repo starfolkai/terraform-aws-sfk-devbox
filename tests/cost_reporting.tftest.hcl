@@ -38,7 +38,7 @@ run "cost_reporting_is_off_by_default" {
   }
 }
 
-run "account_scope_exports_everything_without_tags" {
+run "exports_everything_without_tags" {
   command = apply
 
   variables {
@@ -52,7 +52,7 @@ run "account_scope_exports_everything_without_tags" {
 
   assert {
     condition     = !strcontains(local.cost_report_query, "WHERE") && !strcontains(local.cost_report_query, "resource_tags")
-    error_message = "Account scope must not filter, and must not export resource_tags."
+    error_message = "The export must not filter, and must not export resource_tags."
   }
 
   assert {
@@ -71,7 +71,7 @@ run "account_scope_exports_everything_without_tags" {
   }
 }
 
-run "account_scope_query_is_pinned" {
+run "query_is_pinned" {
   # The coordinator (starfolkai/sfk, EXPORT_COLUMNS in
   # coordinator/app/billing/byoc_cost_ingest.py) reads exactly these columns.
   # Changing this list must change this test, and then that one.
@@ -83,21 +83,8 @@ run "account_scope_query_is_pinned" {
 
   assert {
     condition     = local.cost_report_query == "SELECT identity_line_item_id, identity_time_interval, bill_billing_period_start_date, line_item_usage_start_date, line_item_usage_end_date, line_item_usage_account_id, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_resource_id, line_item_usage_amount, line_item_unblended_cost, line_item_net_unblended_cost, pricing_public_on_demand_cost, pricing_term, savings_plan_savings_plan_effective_cost, savings_plan_amortized_upfront_commitment_for_billing_period FROM COST_AND_USAGE_REPORT"
-    error_message = "The account-scope query changed; update EXPORT_COLUMNS in starfolkai/sfk to match."
+    error_message = "The export query changed; update EXPORT_COLUMNS in starfolkai/sfk to match."
   }
-}
-
-run "tagged_scope_is_not_released" {
-  # Built in cost_reporting.tf but not offered yet: it exports every tag on
-  # Starfolk resources and its filter is untested against a real delivery.
-  command = plan
-
-  variables {
-    enable_cost_reporting = true
-    cost_reporting_scope  = "tagged"
-  }
-
-  expect_failures = [var.cost_reporting_scope]
 }
 
 run "bucket_name_can_be_overridden" {
@@ -145,15 +132,4 @@ run "control_role_reads_only_the_prefix" {
     ]) == 1
     error_message = "The bucket must deny non-TLS access."
   }
-}
-
-run "rejects_unknown_scope" {
-  command = plan
-
-  variables {
-    enable_cost_reporting = true
-    cost_reporting_scope  = "everything"
-  }
-
-  expect_failures = [var.cost_reporting_scope]
 }

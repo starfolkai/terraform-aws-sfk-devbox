@@ -109,12 +109,10 @@ invoice this spend. When it's on, the module creates:
 - a bucket-policy grant letting the control role list and read **only** that
   prefix. The control role's own policy is unchanged.
 
-The export contains every cost line in this account
-(`cost_reporting_scope = "account"`, the only value supported today), so turn
-it on only in an account dedicated to Starfolk. An export created in an account
-covers only that account's costs, even inside an AWS Organization, so nothing
-else of yours is included. Tags aren't exported. A mode for accounts shared
-with other workloads is planned but not available yet.
+The export contains every cost line in this account, so turn it on only in an
+account dedicated to Starfolk. An export created in an account covers only that
+account's costs, even inside an AWS Organization, so nothing else of yours is
+included. Tags aren't exported.
 
 ```hcl
 enable_cost_reporting = true

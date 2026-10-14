@@ -5,18 +5,10 @@
 # Starfolk stores that cost for your account. It is informational: nothing
 # here feeds a Starfolk invoice.
 #
-# cost_reporting_scope picks what the export contains. Only "account" is
-# available: every cost line in this account, for an account dedicated to
-# Starfolk. No tag activation needed: AWS limits an export made in a member
-# account to that account's own costs. Only the columns Starfolk reads are
-# exported, and no tags.
-#
-# "tagged" (only lines whose resource carries sfk:stage = var.stage, for a
-# shared account) is built below but rejected by the variable's validation
-# until it is ready: it still exports every tag on those resources rather than
-# Starfolk's three, its WHERE filter is untested against a real delivery, and
-# Starfolk can't yet tell an export that is empty because tags aren't
-# activated from one with no usage. Enabling it is that validation line.
+# The export holds every cost line in this account, so turn it on only in an
+# account dedicated to Starfolk. No tag activation is needed: AWS limits an
+# export made in a member account to that account's own costs. Only the
+# columns Starfolk reads are exported, and no tags.
 
 locals {
   cost_reporting      = var.enable_cost_reporting
@@ -28,7 +20,7 @@ locals {
   # Exactly the CUR 2.0 columns Starfolk's ingester reads. Keep in sync with
   # EXPORT_COLUMNS in coordinator/app/billing/byoc_cost_ingest.py
   # (starfolkai/sfk), whose tests read Parquet with exactly these columns.
-  cost_report_columns = concat([
+  cost_report_columns = [
     "identity_line_item_id",
     "identity_time_interval",
     "bill_billing_period_start_date",
@@ -46,10 +38,9 @@ locals {
     "pricing_term",
     "savings_plan_savings_plan_effective_cost",
     "savings_plan_amortized_upfront_commitment_for_billing_period",
-  ], var.cost_reporting_scope == "tagged" ? ["resource_tags"] : [])
+  ]
 
-  cost_report_where = var.cost_reporting_scope == "tagged" ? " WHERE resource_tags.user_sfk_stage = '${var.stage}'" : ""
-  cost_report_query = "SELECT ${join(", ", local.cost_report_columns)} FROM COST_AND_USAGE_REPORT${local.cost_report_where}"
+  cost_report_query = "SELECT ${join(", ", local.cost_report_columns)} FROM COST_AND_USAGE_REPORT"
 }
 
 resource "aws_s3_bucket" "cost_report" {
@@ -183,7 +174,7 @@ resource "aws_bcmdataexports_export" "cost_report" {
   export {
     name = local.cost_report_name
     # Static on purpose: description changes force the provider to replace the
-    # export, and switching cost_reporting_scope should be an in-place query edit.
+    # export, and a query change should be an in-place edit.
     description = "Starfolk: AWS cost of Starfolk-managed resources"
 
     data_query {

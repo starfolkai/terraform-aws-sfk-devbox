@@ -441,31 +441,15 @@ variable "enable_cost_reporting" {
   default     = false
   description = <<-EOT
     Export this account's AWS cost and usage (CUR 2.0) to a private bucket that
-    the Starfolk control role can read, so Starfolk can show the AWS cost of
-    your boxes per environment and per user. Informational only: Starfolk does
+    the Starfolk control role can read, so Starfolk can read the AWS cost of
+    the account your boxes run in. Informational only: Starfolk does
     not invoice this spend. Creates an S3 bucket and an AWS Data Export; grants
-    the control role read on the export prefix only. See `cost_reporting_scope`
-    for what the export contains.
+    the control role read on the export prefix only. The export holds every
+    cost line in this account, so use it only in an account dedicated to
+    Starfolk.
   EOT
 }
 
-variable "cost_reporting_scope" {
-  type        = string
-  default     = "account"
-  description = <<-EOT
-    What the cost export contains. Only "account" (the default) is supported:
-    every cost line in this account, for an account dedicated to Starfolk. It
-    needs no cost-allocation tag activation. A "tagged" mode for shared
-    accounts is not available yet.
-  EOT
-
-  validation {
-    # "tagged" is implemented in cost_reporting.tf but not released; see the
-    # comment there for what it waits on.
-    condition     = var.cost_reporting_scope == "account"
-    error_message = "cost_reporting_scope must be \"account\". \"tagged\" (for shared accounts) is not available yet."
-  }
-}
 
 variable "cost_report_bucket_name" {
   type        = string
