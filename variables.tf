@@ -453,17 +453,17 @@ variable "cost_reporting_scope" {
   type        = string
   default     = "account"
   description = <<-EOT
-    What the cost export contains. "account" (default): every cost line in this
-    account — use when the account is dedicated to Starfolk; needs no
-    cost-allocation tag activation. "tagged": only lines for resources tagged
-    `sfk:stage = <stage>` — use in a shared account; requires activating
-    `sfk:stage`, `sfk:workspace_id` and `sfk:environment_id` as cost-allocation
-    tags in the account that pays your AWS bill, or the export stays empty.
+    What the cost export contains. Only "account" (the default) is supported:
+    every cost line in this account, for an account dedicated to Starfolk. It
+    needs no cost-allocation tag activation. A "tagged" mode for shared
+    accounts is not available yet.
   EOT
 
   validation {
-    condition     = contains(["account", "tagged"], var.cost_reporting_scope)
-    error_message = "cost_reporting_scope must be \"account\" or \"tagged\"."
+    # "tagged" is implemented in cost_reporting.tf but not released; see the
+    # comment there for what it waits on.
+    condition     = var.cost_reporting_scope == "account"
+    error_message = "cost_reporting_scope must be \"account\". \"tagged\" (for shared accounts) is not available yet."
   }
 }
 

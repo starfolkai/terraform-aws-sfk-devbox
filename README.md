@@ -109,23 +109,15 @@ invoice this spend. When it's on, the module creates:
 - a bucket-policy grant letting the control role list and read **only** that
   prefix. The control role's own policy is unchanged.
 
-`cost_reporting_scope` decides what the export contains:
-
-- **`"account"` (default)**: every cost line in this account. Use this when the
-  account is dedicated to Starfolk. An export created in an account covers
-  only that account's costs, even inside an AWS Organization, so nothing else
-  of yours is included. Tags aren't exported.
-- **`"tagged"`**: only lines for resources tagged `sfk:stage = <stage>`, for an
-  account shared with other workloads. It also exports `resource_tags`, but
-  only for those rows. This needs one extra step outside this module: in the
-  account that pays your AWS bill (your Organization's management account),
-  open **Billing and Cost Management → Cost allocation tags** and activate
-  `sfk:stage`, `sfk:workspace_id` and `sfk:environment_id`. Until then the
-  export is empty. AWS can backfill activated tags up to 12 months.
+The export contains every cost line in this account
+(`cost_reporting_scope = "account"`, the only value supported today), so turn
+it on only in an account dedicated to Starfolk. An export created in an account
+covers only that account's costs, even inside an AWS Organization, so nothing
+else of yours is included. Tags aren't exported. A mode for accounts shared
+with other workloads is planned but not available yet.
 
 ```hcl
 enable_cost_reporting = true
-# cost_reporting_scope = "tagged"   # only if the account is shared
 ```
 
 The `cost_report_url` output is part of the hand-back you already send to

@@ -2,21 +2,21 @@
 # Created only when enable_cost_reporting = true (default false). An AWS Data
 # Export (CUR 2.0) writes this account's hourly cost and usage into a private
 # bucket here; the control role may read that one prefix and nothing else.
-# Starfolk ingests it to show the AWS cost of your boxes per environment and
-# per user. It is informational: nothing here feeds a Starfolk invoice.
+# Starfolk stores that cost for your account. It is informational: nothing
+# here feeds a Starfolk invoice.
 #
-# cost_reporting_scope picks what the export contains:
-#   "account" — every cost line in this account. Use when the account is
-#               dedicated to Starfolk. No tag activation needed: AWS limits an
-#               export made in a member account to that account's own costs.
-#   "tagged"  — only lines whose resource carries sfk:stage = var.stage. For a
-#               shared account. Needs sfk:stage (and sfk:workspace_id,
-#               sfk:environment_id) activated as cost-allocation tags in the
-#               account that pays your AWS bill; until then the export is empty.
+# cost_reporting_scope picks what the export contains. Only "account" is
+# available: every cost line in this account, for an account dedicated to
+# Starfolk. No tag activation needed: AWS limits an export made in a member
+# account to that account's own costs. Only the columns Starfolk reads are
+# exported, and no tags.
 #
-# Either way only the columns Starfolk reads are exported, and `resource_tags`
-# only in "tagged" mode, so your own tag values on unrelated resources never
-# leave the account.
+# "tagged" (only lines whose resource carries sfk:stage = var.stage, for a
+# shared account) is built below but rejected by the variable's validation
+# until it is ready: it still exports every tag on those resources rather than
+# Starfolk's three, its WHERE filter is untested against a real delivery, and
+# Starfolk can't yet tell an export that is empty because tags aren't
+# activated from one with no usage. Enabling it is that validation line.
 
 locals {
   cost_reporting      = var.enable_cost_reporting

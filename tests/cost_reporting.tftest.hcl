@@ -87,34 +87,25 @@ run "account_scope_query_is_pinned" {
   }
 }
 
-run "tagged_scope_query_is_pinned" {
+run "tagged_scope_is_not_released" {
+  # Built in cost_reporting.tf but not offered yet: it exports every tag on
+  # Starfolk resources and its filter is untested against a real delivery.
   command = plan
 
   variables {
     enable_cost_reporting = true
     cost_reporting_scope  = "tagged"
-    stage                 = "staging"
   }
 
-  assert {
-    condition     = local.cost_report_query == "SELECT identity_line_item_id, identity_time_interval, bill_billing_period_start_date, line_item_usage_start_date, line_item_usage_end_date, line_item_usage_account_id, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_resource_id, line_item_usage_amount, line_item_unblended_cost, line_item_net_unblended_cost, pricing_public_on_demand_cost, pricing_term, savings_plan_savings_plan_effective_cost, savings_plan_amortized_upfront_commitment_for_billing_period, resource_tags FROM COST_AND_USAGE_REPORT WHERE resource_tags.user_sfk_stage = 'staging'"
-    error_message = "The tagged-scope query changed; update EXPORT_COLUMNS in starfolkai/sfk to match."
-  }
+  expect_failures = [var.cost_reporting_scope]
 }
 
-run "tagged_scope_filters_on_stage" {
+run "bucket_name_can_be_overridden" {
   command = apply
 
   variables {
     enable_cost_reporting   = true
-    cost_reporting_scope    = "tagged"
-    stage                   = "staging"
     cost_report_bucket_name = "acme-starfolk-costs"
-  }
-
-  assert {
-    condition     = endswith(local.cost_report_query, "WHERE resource_tags.user_sfk_stage = 'staging'")
-    error_message = "Tagged scope must filter on the stage tag."
   }
 
   assert {
