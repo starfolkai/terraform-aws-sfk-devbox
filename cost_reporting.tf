@@ -26,7 +26,8 @@ locals {
   cost_report_bkt_arn = "arn:aws:s3:::${local.cost_report_bucket}"
 
   # Exactly the CUR 2.0 columns Starfolk's ingester reads. Keep in sync with
-  # coordinator/app/billing/billing_ingest_aws.py in starfolkai/sfk.
+  # EXPORT_COLUMNS in coordinator/app/billing/byoc_cost_ingest.py
+  # (starfolkai/sfk), whose tests read Parquet with exactly these columns.
   cost_report_columns = concat([
     "identity_line_item_id",
     "identity_time_interval",
