@@ -127,10 +127,10 @@ resource "aws_s3_bucket_policy" "cost_report" {
     Statement = [
       {
         # Lets AWS Data Exports deliver, but only exports owned by this account.
-        # Both principals and both source ARNs are what AWS's Data Exports guide
-        # specifies for a CUR 2.0 bucket: delivery runs through the billing
-        # reports service as well as bcm-data-exports, so dropping the legacy
-        # pair can leave the export unable to write.
+        # Both principals and both source ARNs follow the bucket policy AWS's
+        # Data Exports guide gives for a CUR 2.0 bucket, which names the legacy
+        # billing reports service alongside bcm-data-exports. Delivery hasn't
+        # been tested without the legacy pair, so it stays.
         Sid       = "AllowDataExportsDelivery"
         Effect    = "Allow"
         Principal = { Service = ["billingreports.amazonaws.com", "bcm-data-exports.amazonaws.com"] }
