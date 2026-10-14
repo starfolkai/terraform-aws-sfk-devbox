@@ -91,14 +91,18 @@ enable_ec2_image_snapshots = true
 ```
 
 **Cost reporting is opt-in** (`enable_cost_reporting`, default `false`). It lets
-Starfolk show the AWS cost of your boxes, per environment and per user, on its
-billing page. It is information only: Starfolk does not invoice this spend. When
-it's on, the module creates:
+Starfolk read the AWS cost of the account Starfolk runs in. Starfolk stores
+that cost today. Splitting it per environment and per user, and showing it on
+your billing page, are coming later. It is information only: Starfolk does not
+invoice this spend. When it's on, the module creates:
 
 - a private S3 bucket (`cost_report_bucket_name`, default
   `<name_prefix>-cost-report-<account_id>`, in `region`). It is owner-only,
   blocks public access, is encrypted and versioned, denies non-HTTPS access,
-  and expires deliveries after `cost_report_retention_days` (default 400);
+  and expires deliveries after `cost_report_retention_days` (default 400).
+  Starfolk keeps the cost it has already read, but this bucket is your own
+  record, and turning cost reporting off deletes it. Don't shorten the
+  retention below how long you want to check a past month;
 - an AWS Data Export (CUR 2.0, hourly, Parquet) that writes into that bucket
   under `cost_report_prefix`, refreshed by AWS up to three times a day. It
   exports only the columns Starfolk reads;

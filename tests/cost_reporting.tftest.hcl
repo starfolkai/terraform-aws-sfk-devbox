@@ -71,6 +71,37 @@ run "account_scope_exports_everything_without_tags" {
   }
 }
 
+run "account_scope_query_is_pinned" {
+  # The coordinator (starfolkai/sfk, EXPORT_COLUMNS in
+  # coordinator/app/billing/byoc_cost_ingest.py) reads exactly these columns.
+  # Changing this list must change this test, and then that one.
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+  }
+
+  assert {
+    condition     = local.cost_report_query == "SELECT identity_line_item_id, identity_time_interval, bill_billing_period_start_date, line_item_usage_start_date, line_item_usage_end_date, line_item_usage_account_id, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_resource_id, line_item_usage_amount, line_item_unblended_cost, line_item_net_unblended_cost, pricing_public_on_demand_cost, pricing_term, savings_plan_savings_plan_effective_cost, savings_plan_amortized_upfront_commitment_for_billing_period FROM COST_AND_USAGE_REPORT"
+    error_message = "The account-scope query changed; update EXPORT_COLUMNS in starfolkai/sfk to match."
+  }
+}
+
+run "tagged_scope_query_is_pinned" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "staging"
+  }
+
+  assert {
+    condition     = local.cost_report_query == "SELECT identity_line_item_id, identity_time_interval, bill_billing_period_start_date, line_item_usage_start_date, line_item_usage_end_date, line_item_usage_account_id, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_resource_id, line_item_usage_amount, line_item_unblended_cost, line_item_net_unblended_cost, pricing_public_on_demand_cost, pricing_term, savings_plan_savings_plan_effective_cost, savings_plan_amortized_upfront_commitment_for_billing_period, resource_tags FROM COST_AND_USAGE_REPORT WHERE resource_tags.user_sfk_stage = 'staging'"
+    error_message = "The tagged-scope query changed; update EXPORT_COLUMNS in starfolkai/sfk to match."
+  }
+}
+
 run "tagged_scope_filters_on_stage" {
   command = apply
 

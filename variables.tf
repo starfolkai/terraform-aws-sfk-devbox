@@ -487,7 +487,7 @@ variable "cost_report_prefix" {
 variable "cost_report_retention_days" {
   type        = number
   default     = 400
-  description = "Days to keep each cost-report delivery before S3 expires it. Each refresh writes a full copy of the month, so old deliveries are redundant once the month closes."
+  description = "Days to keep each cost-report delivery before S3 expires it. Each refresh writes a full copy of the month, so only a month's last delivery matters. Starfolk keeps the cost it has read, but the last delivery here is your own record: keep it at least as long as you want to check that month."
 
   validation {
     condition     = var.cost_report_retention_days >= 35
