@@ -38,6 +38,12 @@ locals {
     "pricing_term",
     "savings_plan_savings_plan_effective_cost",
     "savings_plan_amortized_upfront_commitment_for_billing_period",
+    # Reserved Instances: a covered hour's real cost. AWS adds a new column only
+    # to deliveries from then on, so these ship before the first delivery.
+    "reservation_reservation_a_r_n",
+    "reservation_effective_cost",
+    "reservation_unused_amortized_upfront_fee_for_billing_period",
+    "reservation_unused_recurring_fee",
   ]
 
   cost_report_query = "SELECT ${join(", ", local.cost_report_columns)} FROM COST_AND_USAGE_REPORT"
