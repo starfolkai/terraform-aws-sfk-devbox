@@ -84,5 +84,7 @@ output "sfk_handback" {
     subnet_ids        = module.sfk_byoc.subnet_ids
     security_group_id = module.sfk_byoc.security_group_id
     instance_profile  = module.sfk_byoc.instance_profile
+    # null unless enable_cost_reporting = true.
+    cost_report_url = module.sfk_byoc.cost_report_url
   }
 }

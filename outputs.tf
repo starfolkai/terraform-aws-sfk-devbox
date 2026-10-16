@@ -47,3 +47,8 @@ output "instance_profile" {
   value       = local.instance_profile_name
   description = "The devbox instance profile name (module-created, or your bring-your-own value)."
 }
+
+output "cost_report_url" {
+  value       = var.enable_cost_reporting ? "s3://${aws_s3_bucket.cost_report[0].bucket}/${local.cost_report_prefix}/${local.cost_report_name}" : null
+  description = "Where the cost export lands (s3://bucket/prefix/export-name). Send it to Starfolk along with role_arn. Null when enable_cost_reporting = false."
+}

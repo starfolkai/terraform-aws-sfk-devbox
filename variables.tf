@@ -435,3 +435,52 @@ variable "tags" {
   default     = {}
   description = "Extra tags merged onto every resource this module creates."
 }
+
+variable "enable_cost_reporting" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Export this account's AWS cost and usage (CUR 2.0) to a private bucket that
+    the Starfolk control role can read, so Starfolk can read the AWS cost of
+    the account your boxes run in. Informational only: Starfolk does
+    not invoice this spend. Creates an S3 bucket and an AWS Data Export; grants
+    the control role read on the export prefix only. The export holds every
+    cost line in this account, so use it only in an account dedicated to
+    Starfolk.
+  EOT
+}
+
+
+variable "cost_report_bucket_name" {
+  type        = string
+  default     = ""
+  description = "Name of the S3 bucket the cost export is written to. Empty = \"<name_prefix>-cost-report-<account_id>\". Created in `region`."
+}
+
+variable "cost_report_prefix" {
+  type        = string
+  default     = "starfolk"
+  description = "Key prefix inside the cost-report bucket. The control role can read only under this prefix."
+
+  validation {
+    condition     = trim(var.cost_report_prefix, "/") != ""
+    error_message = "cost_report_prefix must be non-empty."
+  }
+}
+
+variable "cost_report_retention_days" {
+  type        = number
+  default     = 400
+  description = "Days to keep each cost-report delivery before S3 expires it. Each refresh writes a full copy of the month, so only a month's last delivery matters. Starfolk keeps the cost it has read, but the last delivery here is your own record: keep it at least as long as you want to check that month."
+
+  validation {
+    condition     = var.cost_report_retention_days >= 35
+    error_message = "cost_report_retention_days must be at least 35, so a month's final delivery outlives the month."
+  }
+}
+
+variable "cost_report_bucket_force_destroy" {
+  type        = bool
+  default     = false
+  description = "Let `terraform destroy` (or turning cost reporting off) delete the cost-report bucket even when it still holds reports."
+}
