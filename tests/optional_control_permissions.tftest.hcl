@@ -134,15 +134,18 @@ run "image_snapshots_are_off_by_default" {
         "EC2SnapshotManagedVolumes",
         "EC2CreateManagedSnapshots",
         "EC2TagSnapshotsOnCreate",
-        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2RegisterManagedImages",
+        "EC2RegisterImagesFromManagedSnapshots",
+        "EC2TagImagesOnRegister",
+        "EC2DeregisterManagedImages",
         "EC2DeleteManagedSnapshots",
       ], statement.Sid)
     ]) == 0
-    error_message = "Image regeneration snapshot grants must be opt-in (box recovery's are separate)."
+    error_message = "Image regeneration grants must be opt-in (box recovery's are separate)."
   }
 }
 
-run "image_snapshots_share_only_with_starfolk" {
+run "image_regeneration_stays_in_account" {
   command = apply
 
   variables {
@@ -163,24 +166,55 @@ run "image_snapshots_share_only_with_starfolk" {
         "EC2SnapshotManagedVolumes",
         "EC2CreateManagedSnapshots",
         "EC2TagSnapshotsOnCreate",
-        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2RegisterManagedImages",
+        "EC2RegisterImagesFromManagedSnapshots",
+        "EC2TagImagesOnRegister",
+        "EC2DeregisterManagedImages",
         "EC2DeleteManagedSnapshots",
       ], statement.Sid)
       ]) == toset([
       "EC2SnapshotManagedVolumes",
       "EC2CreateManagedSnapshots",
       "EC2TagSnapshotsOnCreate",
-      "EC2ShareManagedSnapshotsWithStarfolk",
+      "EC2RegisterManagedImages",
+      "EC2RegisterImagesFromManagedSnapshots",
+      "EC2TagImagesOnRegister",
+      "EC2DeregisterManagedImages",
       "EC2DeleteManagedSnapshots",
     ])
-    error_message = "Enabling image snapshots must grant the full snapshot-and-share set."
+    error_message = "Enabling image snapshots must grant the full snapshot-and-register set."
   }
 
+  # Nothing leaves the account: no statement may share a snapshot or image.
   assert {
-    condition = one([
+    condition = length([
       for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
-      if statement.Sid == "EC2ShareManagedSnapshotsWithStarfolk"
-    ]).Condition["ForAllValues:StringEquals"]["ec2:Add/userId"] == ["450410490644"]
-    error_message = "Snapshots may only be shared with the Starfolk account of sfk_principal_arn."
+      if length(setintersection(
+        toset(flatten([statement.Action])),
+        toset(["ec2:ModifySnapshotAttribute", "ec2:ModifyImageAttribute"]),
+      )) > 0
+    ]) == 0
+    error_message = "Image regeneration must not grant sharing snapshots or images out of the account."
+  }
+
+  # Every write is fenced by the stage's managed tag.
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(aws_iam_role_policy.control.policy).Statement :
+      contains(keys(statement.Condition["StringEquals"]), "aws:RequestTag/sfk:prod:managed")
+      || contains(keys(statement.Condition["StringEquals"]), "aws:ResourceTag/sfk:prod:managed")
+      || contains(keys(statement.Condition["StringEquals"]), "ec2:CreateAction")
+      if contains([
+        "EC2SnapshotManagedVolumes",
+        "EC2CreateManagedSnapshots",
+        "EC2TagSnapshotsOnCreate",
+        "EC2RegisterManagedImages",
+        "EC2RegisterImagesFromManagedSnapshots",
+        "EC2TagImagesOnRegister",
+        "EC2DeregisterManagedImages",
+        "EC2DeleteManagedSnapshots",
+      ], statement.Sid)
+    ])
+    error_message = "Every image regeneration grant must be scoped by the managed tag or tag-on-create."
   }
 }

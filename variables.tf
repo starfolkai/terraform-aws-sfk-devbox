@@ -309,17 +309,17 @@ variable "enable_ec2_image_snapshots" {
   default     = false
   description = <<-EOT
     Let Starfolk regenerate this account's devbox image from one of its warm
-    boxes. Grants the control role `ec2:CreateSnapshot` on SFK-managed volumes
-    (into snapshots tagged SFK-managed), `ec2:ModifySnapshotAttribute` on those
-    snapshots to add the Starfolk account only, and `ec2:DeleteSnapshot` on
-    them. Starfolk copies the shared snapshot into its own account, registers
-    the image there, shares it back to this account, and deletes the temporary
-    snapshot here. (`ec2:DescribeSnapshots` is already granted
-    unconditionally for box recovery.)
+    boxes, entirely inside this account. Grants the control role
+    `ec2:CreateSnapshot` on SFK-managed volumes (into snapshots tagged
+    SFK-managed), `ec2:RegisterImage` from those snapshots (into images tagged
+    SFK-managed), and `ec2:DeregisterImage` / `ec2:DeleteSnapshot` on managed
+    images and snapshots, to clean up after a failed run. The image and its
+    snapshot are owned by this account and are never shared out.
+    (`ec2:DescribeSnapshots` and `ec2:DescribeImages` are already granted
+    unconditionally.)
 
-    Off by default: enabling it lets Starfolk read a copy of a devbox's root
-    disk. The box is scrubbed of its credentials first and terminated
-    afterwards.
+    Off by default: enabling it lets Starfolk image a devbox's root disk. The
+    box is scrubbed of its credentials first and terminated afterwards.
   EOT
 }
 
