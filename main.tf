@@ -414,12 +414,12 @@ locals {
     if var.enable_ec2_modify_tagged_volumes
   ]
 
-  # Regenerate Image: snapshot a scrubbed warm box's root volume and share the
-  # snapshot to Starfolk, which copies it and registers the image in its own
-  # account (devbox AMIs stay Starfolk-owned), then deletes the temporary
-  # snapshot here. Every snapshot it creates carries the managed tag, and
-  # sharing may only add the Starfolk account.
-  sfk_account_id = split(":", var.sfk_principal_arn)[4]
+  # Regenerate Image, entirely inside this account: snapshot a scrubbed warm
+  # box's root volume and register the image here, from that snapshot. Nothing
+  # is shared out: the image and its snapshot never leave the account, so the
+  # disk copy stays under this account's own EBS key. Every snapshot and image
+  # it creates carries the managed tag, and it may only deregister or delete
+  # managed-tagged ones (cleanup after a failed run).
   control_image_snapshot_statements = [
     for statement in [
       {
@@ -444,14 +444,35 @@ locals {
         Condition = { StringEquals = { "ec2:CreateAction" = "CreateSnapshot" } }
       },
       {
-        Sid      = "EC2ShareManagedSnapshotsWithStarfolk"
-        Effect   = "Allow"
-        Action   = ["ec2:ModifySnapshotAttribute"]
-        Resource = "arn:aws:ec2:*::snapshot/*"
-        Condition = {
-          StringEquals                = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" }
-          "ForAllValues:StringEquals" = { "ec2:Add/userId" = [local.sfk_account_id] }
-        }
+        # RegisterImage authorizes the new image and the snapshot it is built
+        # from separately: the image must be created managed-tagged, and the
+        # snapshot must already be one of ours.
+        Sid       = "EC2RegisterManagedImages"
+        Effect    = "Allow"
+        Action    = ["ec2:RegisterImage"]
+        Resource  = "arn:aws:ec2:*::image/*"
+        Condition = { StringEquals = { ("aws:RequestTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid       = "EC2RegisterImagesFromManagedSnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:RegisterImage"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
+        Sid       = "EC2TagImagesOnRegister"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateTags"]
+        Resource  = "arn:aws:ec2:*::image/*"
+        Condition = { StringEquals = { "ec2:CreateAction" = "RegisterImage" } }
+      },
+      {
+        Sid       = "EC2DeregisterManagedImages"
+        Effect    = "Allow"
+        Action    = ["ec2:DeregisterImage"]
+        Resource  = "arn:aws:ec2:*::image/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
       },
       {
         Sid       = "EC2DeleteManagedSnapshots"

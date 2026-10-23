@@ -134,15 +134,18 @@ run "image_snapshots_are_off_by_default" {
         "EC2SnapshotManagedVolumes",
         "EC2CreateManagedSnapshots",
         "EC2TagSnapshotsOnCreate",
-        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2RegisterManagedImages",
+        "EC2RegisterImagesFromManagedSnapshots",
+        "EC2TagImagesOnRegister",
+        "EC2DeregisterManagedImages",
         "EC2DeleteManagedSnapshots",
       ], statement.Sid)
     ]) == 0
-    error_message = "Image regeneration snapshot grants must be opt-in (box recovery's are separate)."
+    error_message = "Image regeneration grants must be opt-in (box recovery's are separate)."
   }
 }
 
-run "image_snapshots_share_only_with_starfolk" {
+run "image_regeneration_stays_in_account" {
   command = apply
 
   variables {
@@ -163,24 +166,112 @@ run "image_snapshots_share_only_with_starfolk" {
         "EC2SnapshotManagedVolumes",
         "EC2CreateManagedSnapshots",
         "EC2TagSnapshotsOnCreate",
-        "EC2ShareManagedSnapshotsWithStarfolk",
+        "EC2RegisterManagedImages",
+        "EC2RegisterImagesFromManagedSnapshots",
+        "EC2TagImagesOnRegister",
+        "EC2DeregisterManagedImages",
         "EC2DeleteManagedSnapshots",
       ], statement.Sid)
       ]) == toset([
       "EC2SnapshotManagedVolumes",
       "EC2CreateManagedSnapshots",
       "EC2TagSnapshotsOnCreate",
-      "EC2ShareManagedSnapshotsWithStarfolk",
+      "EC2RegisterManagedImages",
+      "EC2RegisterImagesFromManagedSnapshots",
+      "EC2TagImagesOnRegister",
+      "EC2DeregisterManagedImages",
       "EC2DeleteManagedSnapshots",
     ])
-    error_message = "Enabling image snapshots must grant the full snapshot-and-share set."
+    error_message = "Enabling image snapshots must grant the full snapshot-and-register set."
   }
 
+  # Nothing leaves the account: no statement may share a snapshot or image.
   assert {
-    condition = one([
+    condition = length([
       for statement in jsondecode(aws_iam_role_policy.control.policy).Statement : statement
-      if statement.Sid == "EC2ShareManagedSnapshotsWithStarfolk"
-    ]).Condition["ForAllValues:StringEquals"]["ec2:Add/userId"] == ["450410490644"]
-    error_message = "Snapshots may only be shared with the Starfolk account of sfk_principal_arn."
+      if length(setintersection(
+        toset(flatten([statement.Action])),
+        toset(["ec2:ModifySnapshotAttribute", "ec2:ModifyImageAttribute"]),
+      )) > 0
+    ]) == 0
+    error_message = "Image regeneration must not grant sharing snapshots or images out of the account."
+  }
+
+  # Each statement exactly: a wrong condition key (say, ResourceTag on the image
+  # RegisterImage creates) would deny every real call, and nothing else here
+  # evaluates the policy.
+  assert {
+    condition = {
+      for statement in jsondecode(aws_iam_role_policy.control.policy).Statement :
+      statement.Sid => statement
+      if contains([
+        "EC2SnapshotManagedVolumes",
+        "EC2CreateManagedSnapshots",
+        "EC2TagSnapshotsOnCreate",
+        "EC2RegisterManagedImages",
+        "EC2RegisterImagesFromManagedSnapshots",
+        "EC2TagImagesOnRegister",
+        "EC2DeregisterManagedImages",
+        "EC2DeleteManagedSnapshots",
+      ], statement.Sid)
+      } == {
+      EC2SnapshotManagedVolumes = {
+        Sid       = "EC2SnapshotManagedVolumes"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateSnapshot"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
+        Condition = { StringEquals = { "aws:ResourceTag/sfk:prod:managed" = "true" } }
+      }
+      EC2CreateManagedSnapshots = {
+        Sid       = "EC2CreateManagedSnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateSnapshot"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { "aws:RequestTag/sfk:prod:managed" = "true" } }
+      }
+      EC2TagSnapshotsOnCreate = {
+        Sid       = "EC2TagSnapshotsOnCreate"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateTags"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { "ec2:CreateAction" = "CreateSnapshot" } }
+      }
+      EC2RegisterManagedImages = {
+        Sid       = "EC2RegisterManagedImages"
+        Effect    = "Allow"
+        Action    = ["ec2:RegisterImage"]
+        Resource  = "arn:aws:ec2:*::image/*"
+        Condition = { StringEquals = { "aws:RequestTag/sfk:prod:managed" = "true" } }
+      }
+      EC2RegisterImagesFromManagedSnapshots = {
+        Sid       = "EC2RegisterImagesFromManagedSnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:RegisterImage"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { "aws:ResourceTag/sfk:prod:managed" = "true" } }
+      }
+      EC2TagImagesOnRegister = {
+        Sid       = "EC2TagImagesOnRegister"
+        Effect    = "Allow"
+        Action    = ["ec2:CreateTags"]
+        Resource  = "arn:aws:ec2:*::image/*"
+        Condition = { StringEquals = { "ec2:CreateAction" = "RegisterImage" } }
+      }
+      EC2DeregisterManagedImages = {
+        Sid       = "EC2DeregisterManagedImages"
+        Effect    = "Allow"
+        Action    = ["ec2:DeregisterImage"]
+        Resource  = "arn:aws:ec2:*::image/*"
+        Condition = { StringEquals = { "aws:ResourceTag/sfk:prod:managed" = "true" } }
+      }
+      EC2DeleteManagedSnapshots = {
+        Sid       = "EC2DeleteManagedSnapshots"
+        Effect    = "Allow"
+        Action    = ["ec2:DeleteSnapshot"]
+        Resource  = "arn:aws:ec2:*::snapshot/*"
+        Condition = { StringEquals = { "aws:ResourceTag/sfk:prod:managed" = "true" } }
+      }
+    }
+    error_message = "Each image regeneration statement must have exactly its action, resource, and tag condition."
   }
 }
