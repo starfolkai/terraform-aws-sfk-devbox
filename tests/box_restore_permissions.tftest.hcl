@@ -22,7 +22,7 @@ run "restore_permissions_require_positive_tags" {
       ]) == {
       Sid      = "EC2ManageRestoreVolumes"
       Effect   = "Allow"
-      Action   = ["ec2:AttachVolume"]
+      Action   = ["ec2:AttachVolume", "ec2:DetachVolume"]
       Resource = "arn:aws:ec2:*:*:volume/*"
       Condition = {
         StringEquals = {
@@ -32,7 +32,7 @@ run "restore_permissions_require_positive_tags" {
         Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
       }
     }
-    error_message = "Only positively tagged recovery copies can be attached."
+    error_message = "Only positively tagged restore disks can be attached or detached."
   }
   assert {
     condition = one([
@@ -44,4 +44,16 @@ run "restore_permissions_require_positive_tags" {
     }
     error_message = "New volumes must come from archived recovery snapshots."
   }
+  assert {
+    condition = one([for s in jsondecode(aws_iam_role_policy.control.policy).Statement : s
+      if s.Sid == "EC2DeleteRestoreTemporaryVolumes"]).Condition == {
+      StringEquals = {
+        "aws:ResourceTag/sfk:prod:managed" = "true"
+        "aws:ResourceTag/sfk:purpose"      = "box-restore"
+      }
+      Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
+    }
+    error_message = "Deleting a temporary root requires the same positive restore ownership."
+  }
+
 }

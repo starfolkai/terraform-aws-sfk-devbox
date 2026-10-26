@@ -587,9 +587,22 @@ resource "aws_iam_role_policy" "control" {
         Condition = { StringEquals = { "ec2:CreateAction" = "CreateVolume" } }
       },
       {
+        Sid      = "EC2DeleteRestoreTemporaryVolumes"
+        Effect   = "Allow"
+        Action   = ["ec2:DeleteVolume"]
+        Resource = "arn:aws:ec2:*:*:volume/*"
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/sfk:purpose"                = "box-restore"
+            ("aws:ResourceTag/sfk:${var.stage}:managed") = "true"
+          }
+          Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
+        }
+      },
+      {
         Sid      = "EC2ManageRestoreVolumes"
         Effect   = "Allow"
-        Action   = ["ec2:AttachVolume"]
+        Action   = ["ec2:AttachVolume", "ec2:DetachVolume"]
         Resource = "arn:aws:ec2:*:*:volume/*"
         Condition = {
           StringEquals = {
@@ -602,7 +615,7 @@ resource "aws_iam_role_policy" "control" {
       {
         Sid      = "EC2AttachRestoreInstances"
         Effect   = "Allow"
-        Action   = ["ec2:AttachVolume"]
+        Action   = ["ec2:AttachVolume", "ec2:DetachVolume"]
         Resource = "arn:aws:ec2:*:*:instance/*"
         Condition = {
           StringEquals = {

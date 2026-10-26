@@ -18,7 +18,7 @@ and apply it with your own credentials; Starfolk never receives a key.
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
 Data recovery adds `CreateVolume` from snapshots positively tagged as Starfolk
-recovery archives and `AttachVolume` for copies tagged with the recovery
+recovery archives and `AttachVolume`, `DetachVolume` and temporary-volume `DeleteVolume` for disks tagged with the recovery
 purpose and request UUID. Attachment also requires the stage's managed tag.
 It adds no detach or volume-delete permission and leaves snapshot deletion
 unchanged. The coordinator verifies catalog/provenance and keeps the fresh boot
