@@ -48,8 +48,9 @@ run "restore_permissions_require_positive_tags" {
     condition = one([for s in jsondecode(aws_iam_role_policy.control.policy).Statement : s
       if s.Sid == "EC2DeleteRestoreTemporaryVolumes"]).Condition == {
       StringEquals = {
-        "aws:ResourceTag/sfk:prod:managed" = "true"
-        "aws:ResourceTag/sfk:purpose"      = "box-restore"
+        "aws:ResourceTag/sfk:prod:managed"     = "true"
+        "aws:ResourceTag/sfk:purpose"          = "box-restore"
+        "aws:ResourceTag/sfk:box-restore-role" = "temporary-root"
       }
       Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
     }

@@ -20,9 +20,11 @@ and apply it with your own credentials; Starfolk never receives a key.
 Recovery grants `CreateVolume` from snapshots positively tagged as Starfolk
 recovery archives. `AttachVolume` and `DetachVolume` require both the disk and
 instance to carry the stage's managed tag, `sfk:purpose=box-restore`, and a
-`sfk:box-restore` request tag. `DeleteVolume` requires the same tags on the disk;
-the coordinator additionally verifies the exact request and recorded temporary
-boot disk before deleting it. Snapshot deletion permissions are unchanged.
+`sfk:box-restore` request tag. `DeleteVolume` additionally requires
+`sfk:box-restore-role=temporary-root`, which only the disposable boot disk receives;
+the saved root copy never receives this tag. Attach/detach ownership tags remain
+after completion; only deletion is restricted to temporary disks. The coordinator
+also verifies the exact request and recorded temporary disk ID before deleting. Snapshot deletion permissions are unchanged.
 
 Full-box restore swaps a prepared copy of the saved disk into the replacement's
 boot slot. Crew-assisted data recovery instead keeps the fresh boot disk and

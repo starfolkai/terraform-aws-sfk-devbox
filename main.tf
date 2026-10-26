@@ -594,6 +594,7 @@ resource "aws_iam_role_policy" "control" {
         Condition = {
           StringEquals = {
             "aws:ResourceTag/sfk:purpose"                = "box-restore"
+            "aws:ResourceTag/sfk:box-restore-role"       = "temporary-root"
             ("aws:ResourceTag/sfk:${var.stage}:managed") = "true"
           }
           Null = { "aws:ResourceTag/sfk:box-restore" = "false" }
