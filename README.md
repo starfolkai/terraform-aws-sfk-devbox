@@ -17,14 +17,21 @@ and apply it with your own credentials; Starfolk never receives a key.
 - **Instance profile** `sfk-devbox` (+ `AmazonSSMManagedInstanceCore`) so the box's SSM agent registers in your account. Optional — bring your own instead (see [Instance role: own it yourself](#instance-role-own-it-yourself)).
 - **Control role** `sfk-devbox-control`, assumed by Starfolk (trust = SFK principal **+ external id**). Least-privilege: `iam:PassRole` pinned to the `sfk-devbox` role ARN, `ec2:RunInstances` pinned to the created subnet + SG ARNs, `ssm:SendCommand` tag-scoped to `sfk:<stage>:managed` instances, destructive EC2 actions tag-gated, and **no `sts:*` / no IAM or network mutation**.
 
-Data recovery adds `CreateVolume` from snapshots positively tagged as Starfolk
-recovery archives and `AttachVolume` for copies tagged with the recovery
-purpose and request UUID. Attachment also requires the stage's managed tag.
-It adds no detach or volume-delete permission and leaves snapshot deletion
-unchanged. The coordinator verifies catalog/provenance and keeps the fresh boot
-disk, mounting the old disks read-only under `/recovered-workspace`.
-Customers need to upgrade and apply this module before enabling recovery;
-older grants fail its disk-creation dry-run before compute is launched.
+Recovery grants `CreateVolume` from snapshots positively tagged as Starfolk
+recovery archives. `AttachVolume` and `DetachVolume` require both the disk and
+instance to carry the stage's managed tag, `sfk:purpose=box-restore`, and a
+`sfk:box-restore` request tag. `DeleteVolume` additionally requires
+`sfk:box-restore-role=temporary-root`, which only the disposable boot disk receives;
+the saved root copy never receives this tag. Attach/detach ownership tags remain
+after completion; only deletion is restricted to temporary disks. The coordinator
+also verifies the exact request and recorded temporary disk ID before deleting. Snapshot deletion permissions are unchanged.
+
+Full-box restore swaps a prepared copy of the saved disk into the replacement's
+boot slot. Crew-assisted data recovery instead keeps the fresh boot disk and
+mounts saved disks read-only under `/recovered-workspace`. Customers must upgrade
+and apply this module before enabling full-box restore. Older grants cannot
+detach the disks for a root swap; upgrading the module alone enables neither
+workflow.
 
 Two additional control-role capabilities are independently configurable and
 default on, so they work after upgrading while still allowing separate security
