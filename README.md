@@ -26,6 +26,13 @@ the saved root copy never receives this tag. Attach/detach ownership tags remain
 after completion; only deletion is restricted to temporary disks. The coordinator
 also verifies the exact request and recorded temporary disk ID before deleting. Snapshot deletion permissions are unchanged.
 
+The control role also permits `s3:CreateBucket` for names beginning with
+`starfolk` (lowercase, as S3 requires). This is a permission-only prerequisite
+for future storage provisioning: upgrading the module creates no buckets and
+does not move existing Starfolk drive data. This grant does not include bucket
+configuration, deletion, or object access. Customers must upgrade their module
+pin and apply it before that creation permission is available in their account.
+
 Full-box restore swaps a prepared copy of the saved disk into the replacement's
 boot slot. Crew-assisted data recovery instead keeps the fresh boot disk and
 mounts saved disks read-only under `/recovered-workspace`. Customers must upgrade

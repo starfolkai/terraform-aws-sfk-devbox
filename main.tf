@@ -507,6 +507,15 @@ resource "aws_iam_role_policy" "control" {
     Version = "2012-10-17"
     Statement = concat([
       {
+        # Permission-only predecessor for runtime-created buckets. Keep this
+        # aligned with sfk's hosted coordinator task_bucket_creation policy.
+        # S3 bucket names are lowercase; this grants no object access.
+        Sid      = "CreateStarfolkBuckets"
+        Effect   = "Allow"
+        Action   = ["s3:CreateBucket"]
+        Resource = "arn:aws:s3:::starfolk*"
+      },
+      {
         Sid    = "EC2Describe"
         Effect = "Allow"
         Action = [
