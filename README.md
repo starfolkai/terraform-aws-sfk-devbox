@@ -217,6 +217,13 @@ your CloudTrail. Starfolk manages boxes through AWS APIs by default; setting
 `enable_coordinator_access = true` additionally permits the coordinator to
 connect directly to TCP 7681 from `coordinator_ingress_cidrs`.
 
+The control role permits Starfolk to configure deletion on termination for
+attached disks carrying this module's managed-stage tag. Both disk backup and
+restore need this permission. It does not grant post-launch volume tagging or
+broaden direct disk deletion. Customers must upgrade and apply the module before
+enabling disk capture or restore; older roles cannot finish either operation
+when this permission is missing and require staff repair.
+
 ## Instance role: own it yourself
 
 By default the module creates the `sfk-devbox` IAM role + instance profile (with
@@ -523,13 +530,6 @@ The `access_mode` output is derived from `assign_public_ip` (`public` when boxes
 `terraform init && terraform plan` → review with your security team → `terraform apply`, then send the `sfk_handback` output to Starfolk.
 
 ## Registering with Starfolk (the second half)
-
-The control role permits Starfolk to configure deletion on termination for
-attached disks carrying this module's managed-stage tag. This lets disk backup
-finish before the source box and disks are terminated. It does not grant
-post-launch volume tagging or broaden direct disk deletion. Customers must
-upgrade and apply the module before enabling disk capture; older roles leave
-the source box stopped if this permission is missing.
 
 This module creates the AWS side. Registering these values with your Starfolk
 environment is a separate step — send Starfolk the `sfk_handback` output via slack. There are no secrets here- only AWS ARNs

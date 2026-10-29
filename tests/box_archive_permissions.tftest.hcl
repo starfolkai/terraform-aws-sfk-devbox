@@ -18,15 +18,15 @@ run "archive_disk_cleanup_permission_is_volume_scoped" {
   assert {
     condition = one([
       for s in jsondecode(aws_iam_role_policy.control.policy).Statement : s
-      if try(s.Sid, "") == "EC2ArchiveVolumeTermination"
+      if try(s.Sid, "") == "EC2VolumeTermination"
       ]) == {
-      Sid       = "EC2ArchiveVolumeTermination"
+      Sid       = "EC2VolumeTermination"
       Effect    = "Allow"
       Action    = ["ec2:ModifyInstanceAttribute"]
       Resource  = "arn:aws:ec2:*:*:volume/*"
       Condition = { StringEquals = { "aws:ResourceTag/sfk:prod:managed" = "true" } }
     }
-    error_message = "Archive finalization needs only ModifyInstanceAttribute on stage-managed volumes."
+    error_message = "Archive and restore need only ModifyInstanceAttribute on stage-managed volumes."
   }
 }
 
@@ -44,7 +44,7 @@ run "archive_disk_cleanup_uses_customer_stage" {
   assert {
     condition = one([
       for s in jsondecode(aws_iam_role_policy.control.policy).Statement : s.Condition
-      if try(s.Sid, "") == "EC2ArchiveVolumeTermination"
+      if try(s.Sid, "") == "EC2VolumeTermination"
     ]) == { StringEquals = { "aws:ResourceTag/sfk:staging:managed" = "true" } }
     error_message = "The volume permission must use the configured stage, never a fixed prod tag."
   }
