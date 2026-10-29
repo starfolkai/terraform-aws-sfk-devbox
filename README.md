@@ -524,6 +524,13 @@ The `access_mode` output is derived from `assign_public_ip` (`public` when boxes
 
 ## Registering with Starfolk (the second half)
 
+The control role permits Starfolk to configure deletion on termination for
+attached disks carrying this module's managed-stage tag. This lets disk backup
+finish before the source box and disks are terminated. It does not grant
+post-launch volume tagging or broaden direct disk deletion. Customers must
+upgrade and apply the module before enabling disk capture; older roles leave
+the source box stopped if this permission is missing.
+
 This module creates the AWS side. Registering these values with your Starfolk
 environment is a separate step — send Starfolk the `sfk_handback` output via slack. There are no secrets here- only AWS ARNs
 

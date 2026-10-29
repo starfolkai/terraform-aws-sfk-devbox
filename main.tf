@@ -662,6 +662,16 @@ resource "aws_iam_role_policy" "control" {
         Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
       },
       {
+        # Archive finalization sets DeleteOnTermination on attached disks.
+        # This instance API also authorizes each volume. Keep tagging confined
+        # to instances; mirror the coordinator's shared volume policy.
+        Sid       = "EC2ArchiveVolumeTermination"
+        Effect    = "Allow"
+        Action    = ["ec2:ModifyInstanceAttribute"]
+        Resource  = "arn:aws:ec2:*:*:volume/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
         Sid       = "PassRole"
         Effect    = "Allow"
         Action    = "iam:PassRole"
