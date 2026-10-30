@@ -27,7 +27,7 @@ resource "aws_iam_role" "drive" {
       }
     }]
   })
-  tags = local.common_tags
+  tags = merge({ owner = "starfolk-platform", purpose = "workspace Drive owner sessions" }, local.common_tags)
 }
 
 resource "aws_iam_role_policy" "drive" {
@@ -78,7 +78,7 @@ resource "aws_iam_role" "drive_replication" {
       }
     }]
   })
-  tags = local.common_tags
+  tags = merge({ owner = "starfolk-platform", purpose = "workspace Drive cross-region replication" }, local.common_tags)
 }
 
 resource "aws_iam_role_policy" "drive_replication" {
