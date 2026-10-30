@@ -29,8 +29,8 @@ also verifies the exact request and recorded temporary disk ID before deleting. 
 The control role also permits `s3:CreateBucket` for names beginning with
 `starfolk` (lowercase, as S3 requires). This is a permission-only prerequisite
 for future storage provisioning: upgrading the module creates no buckets and
-does not move existing Starfolk drive data. This grant does not include bucket
-configuration, deletion, or object access. Customers must upgrade their module
+does not move existing Starfolk drive data. The creation statement itself includes no configuration, deletion or object access;
+the separate scoped Drive grants are documented below. Customers must upgrade their module
 pin and apply it before that creation permission is available in their account.
 
 Full-box restore swaps a prepared copy of the saved disk into the replacement's
@@ -545,3 +545,21 @@ environment is a separate step — send Starfolk the `sfk_handback` output via s
 
 - Terraform >= 1.5, AWS provider >= 5.0, random provider >= 3.0.
 - Credentials for your account able to create EC2 (subnets/SG) + IAM (roles/instance profile).
+
+### Per-workspace Starfolk drive mounts
+
+New boxes keep Drive data in this customer account, with a private, versioned source bucket
+and a cross-region replica. The coordinator configures these after lazy creation; applying
+this module alone creates no Drive buckets and moves no files. Upgrade/apply this module before
+using the corresponding new-box runtime change. Old box mounts remain a manual migration.
+
+The control role can configure `starfolk-drive-*` bucket controls, pass only its own replication
+role to S3, and assume only its own storage role with workspace/user/bucket tags. Box credentials
+are short-lived and limited to that exact bucket and owner's prefix. They cannot delete old
+versions or administer a bucket. Instance profiles receive none of these new grants.
+
+The control role also has version-list and delete-only grants for workspace erasure on these
+buckets; it gets no direct file-read grant. Customer account registration is unchanged: storage
+role names use the first 16 hex characters of SHA256 of the registered control ARN. Both source
+and replica stay in the registered account; the replica uses us-west-2, or us-east-2 when the
+primary is us-west-2.

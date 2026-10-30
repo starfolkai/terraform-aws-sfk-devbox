@@ -516,6 +516,46 @@ resource "aws_iam_role_policy" "control" {
         Resource = "arn:aws:s3:::starfolk*"
       },
       {
+        Sid    = "ConfigureStarfolkBuckets"
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucketLocation", "s3:GetBucketTagging", "s3:PutBucketTagging",
+          "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock",
+          "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
+          "s3:GetBucketVersioning", "s3:PutBucketVersioning",
+          "s3:GetBucketPolicy", "s3:PutBucketPolicy",
+          "s3:GetLifecycleConfiguration", "s3:PutLifecycleConfiguration",
+          "s3:GetReplicationConfiguration", "s3:PutReplicationConfiguration",
+          "s3:GetBucketOwnershipControls", "s3:PutBucketOwnershipControls",
+        ]
+        Resource = "arn:aws:s3:::starfolk-drive-*"
+      },
+      {
+        Sid      = "MintDriveOwnerSessions"
+        Effect   = "Allow"
+        Action   = ["sts:AssumeRole", "sts:TagSession"]
+        Resource = aws_iam_role.drive.arn
+      },
+      {
+        Sid      = "EraseWorkspaceDriveVersions"
+        Effect   = "Allow"
+        Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+        Resource = "arn:aws:s3:::starfolk-drive-*/*"
+      },
+      {
+        Sid      = "ListWorkspaceDriveVersions"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucketVersions"]
+        Resource = "arn:aws:s3:::starfolk-drive-*"
+      },
+      {
+        Sid       = "PassDriveReplicationRole"
+        Effect    = "Allow"
+        Action    = ["iam:PassRole"]
+        Resource  = aws_iam_role.drive_replication.arn
+        Condition = { StringEquals = { "iam:PassedToService" = "s3.amazonaws.com" } }
+      },
+      {
         Sid    = "EC2Describe"
         Effect = "Allow"
         Action = [
