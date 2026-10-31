@@ -557,6 +557,10 @@ The control role can configure `starfolk-drive-*` bucket controls, pass only its
 role to S3, and assume only its own storage role with workspace/user/bucket tags. Box credentials
 are short-lived and limited to that exact bucket and owner's prefix. They cannot delete old
 versions or administer a bucket. Instance profiles receive none of these new grants.
+Storage grants accept `starfolk-drive-<stage>-workspace-<workspace-id>-<suffix>`
+using this module's `stage`, while preserving already-reserved names without a stage.
+Existing customer installations must upgrade and apply this policy before mounting
+buckets with the stage-aware naming scheme.
 
 The control role also has version-list and delete-only grants for workspace erasure on these
 buckets; it gets no direct file-read grant. Customer account registration is unchanged: storage

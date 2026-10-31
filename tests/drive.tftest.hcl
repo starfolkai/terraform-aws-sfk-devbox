@@ -33,3 +33,32 @@ run "workspace_storage_has_scoped_roles_and_no_instance_grant" {
     error_message = "Control may pass only its own replication role."
   }
 }
+
+
+run "stage_aware_and_reserved_names_keep_owner_boundary" {
+  command = plan
+  variables { stage = "staging" }
+  assert {
+    condition = alltrue([for statement in jsondecode(aws_iam_role_policy.drive.policy).Statement :
+      toset(statement.Condition.StringLike["aws:PrincipalTag/bucket_name"]) == toset([
+        "starfolk-drive-staging-workspace-$${aws:PrincipalTag/workspace_id}-*",
+        "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*",
+      ])
+    ])
+    error_message = "All owner grants must admit this stage's workspace names and existing reservations."
+  }
+}
+
+run "prod_names_are_bound_to_prod" {
+  command = plan
+  variables { stage = "prod" }
+  assert {
+    condition = alltrue([for statement in jsondecode(aws_iam_role_policy.drive.policy).Statement :
+      toset(statement.Condition.StringLike["aws:PrincipalTag/bucket_name"]) == toset([
+        "starfolk-drive-prod-workspace-$${aws:PrincipalTag/workspace_id}-*",
+        "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*",
+      ])
+    ])
+    error_message = "Production must not use a stage wildcard or lose already-reserved names."
+  }
+}
