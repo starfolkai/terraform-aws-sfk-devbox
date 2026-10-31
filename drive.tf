@@ -43,14 +43,14 @@ resource "aws_iam_role_policy" "drive" {
           "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}/$${aws:PrincipalTag/workspace_id}/$${aws:PrincipalTag/user_id}",
           "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}/$${aws:PrincipalTag/workspace_id}/$${aws:PrincipalTag/user_id}/*",
         ]
-        Condition = { StringLike = { "aws:PrincipalTag/bucket_name" = "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*" } }
+        Condition = { StringLike = { "aws:PrincipalTag/bucket_name" = ["starfolk-drive-${var.stage}-workspace-$${aws:PrincipalTag/workspace_id}-*", "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*"] } }
       },
       {
         Effect   = "Allow"
         Action   = "s3:ListBucket"
         Resource = "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}"
         Condition = { StringLike = {
-          "aws:PrincipalTag/bucket_name" = "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*"
+          "aws:PrincipalTag/bucket_name" = ["starfolk-drive-${var.stage}-workspace-$${aws:PrincipalTag/workspace_id}-*", "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*"]
           "s3:prefix"                    = ["$${aws:PrincipalTag/workspace_id}/$${aws:PrincipalTag/user_id}/*"]
         } }
       },
@@ -58,7 +58,7 @@ resource "aws_iam_role_policy" "drive" {
         Effect    = "Allow"
         Action    = "s3:GetBucketLocation"
         Resource  = "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}"
-        Condition = { StringLike = { "aws:PrincipalTag/bucket_name" = "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*" } }
+        Condition = { StringLike = { "aws:PrincipalTag/bucket_name" = ["starfolk-drive-${var.stage}-workspace-$${aws:PrincipalTag/workspace_id}-*", "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*"] } }
       },
     ]
   })
