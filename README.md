@@ -519,7 +519,7 @@ tags = { "cost-center" = "eng-tools", "owner" = "platform" }
 
 **Provider `default_tags` are not included.** They reach this module's resources,
 but Starfolk creates the boxes with its own credentials, not your provider, so
-they never see them. Repeat any you want on the boxes in `tags` (plan and apply
+the boxes never get them. Repeat any you want on the boxes in `tags` (plan and apply
 print a warning, `default_tags_not_sent_to_starfolk`, naming the missing keys):
 
 ```hcl
@@ -646,15 +646,16 @@ module "sfk_byoc" {
 
 output "sfk_handback" {
   value = {
-    account_id        = module.sfk_byoc.account_id
-    access_mode       = module.sfk_byoc.access_mode  # "public" | "vpn_private", from assign_public_ip
-    region            = module.sfk_byoc.region
-    role_arn          = module.sfk_byoc.role_arn
-    external_id       = module.sfk_byoc.external_id
-    subnet_ids        = module.sfk_byoc.subnet_ids
-    security_group_id = module.sfk_byoc.security_group_id
-    instance_profile  = module.sfk_byoc.instance_profile
-    dynamic_resource_tags = module.sfk_byoc.dynamic_resource_tags # your `tags`, for the boxes Starfolk creates
+    account_id            = module.sfk_byoc.account_id
+    access_mode           = module.sfk_byoc.access_mode  # "public" | "vpn_private", from assign_public_ip
+    region                = module.sfk_byoc.region
+    role_arn              = module.sfk_byoc.role_arn
+    external_id           = module.sfk_byoc.external_id
+    subnet_ids            = module.sfk_byoc.subnet_ids
+    security_group_id     = module.sfk_byoc.security_group_id
+    instance_profile      = module.sfk_byoc.instance_profile
+    # Your `tags`, for the boxes Starfolk creates.
+    dynamic_resource_tags = module.sfk_byoc.dynamic_resource_tags
   }
 }
 ```
