@@ -440,9 +440,10 @@ variable "tags" {
     ones they travel in the `dynamic_resource_tags` output, so re-send the
     hand-back after changing them. Keys starting with `sfk:`, and `Name`, are
     Starfolk's and are left out of that output. Starfolk accepts at most 30.
+    The AWS provider's `default_tags` are not included: list any you want on
+    the boxes here too (plan warns about any that are missing).
   EOT
 }
-
 
 variable "enable_cost_reporting" {
   type        = bool

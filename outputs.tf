@@ -63,3 +63,18 @@ output "dynamic_resource_tags" {
   })
   description = "The `tags` Starfolk adds to the instances, volumes, snapshots and images it creates here. Send it to Starfolk with role_arn."
 }
+
+# Provider `default_tags` reach this module's resources but not the hand-back:
+# Starfolk creates the boxes with its own credentials, not this provider. Warn
+# (a check never fails the run) when any of them is missing from `tags`.
+check "default_tags_not_sent_to_starfolk" {
+  data "aws_default_tags" "provider" {}
+
+  assert {
+    condition = length(setsubtract(
+      [for k in keys(data.aws_default_tags.provider.tags) : k if !startswith(lower(k), "sfk:") && k != "Name"],
+      keys(var.tags),
+    )) == 0
+    error_message = "Your provider's default_tags are not sent to Starfolk, so the boxes, volumes, snapshots and images it creates won't carry them. To tag those too, add these keys to the module's `tags`: ${join(", ", sort(setsubtract([for k in keys(data.aws_default_tags.provider.tags) : k if !startswith(lower(k), "sfk:") && k != "Name"], keys(var.tags))))}."
+  }
+}
