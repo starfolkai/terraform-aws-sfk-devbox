@@ -126,7 +126,9 @@ invoice this spend. When it's on, the module creates:
 
 `cost_reporting_scope` sets which cost lines the export holds:
 
-- **`"account"`** (default): every cost line in this account. Use it only in an
+There is no default: with cost reporting on, you must choose one.
+
+- **`"account"`**: every cost line in this account. Use it only in an
   account dedicated to Starfolk. An export created in an account covers only
   that account's costs, even inside an AWS Organization, so nothing in your
   other accounts is included. No tag setup is needed.
@@ -141,8 +143,10 @@ but the export holds the same columns as `"account"`.
 
 ```hcl
 enable_cost_reporting = true
-# Only if this account also runs workloads that aren't Starfolk's:
-# cost_reporting_scope = "tagged"
+# "account": this account runs only Starfolk; Starfolk sees all of its cost.
+# "tagged":  this account also runs your own workloads; Starfolk sees only the
+#            cost of resources tagged for Starfolk. Needs the tag setup below.
+cost_reporting_scope = "account"
 ```
 
 The `cost_report_url` output is part of the hand-back you already send to
@@ -166,10 +170,13 @@ tag into billing data once that tag key is **activated as a cost-allocation
 tag**. Until you activate both keys, the export arrives empty, and Starfolk
 sees no cost.
 
-**What's left out.** Cost that isn't on a tagged resource never matches the
-filter: NAT gateway and data transfer for the Starfolk VPC, tax, support, and
-other account-level charges. What Starfolk sees is the cost of its boxes,
-their disks, snapshots and images, and the resources this module creates.
+**What's left out.** A cost line matches only if AWS bills it to a tagged
+resource. What Starfolk sees is the cost of its boxes, their disks, snapshots
+and images, and the resources this module creates. We expect these to be left
+out: your NAT gateway, public IPv4 addresses (`assign_public_ip`), tax,
+support, and other account-level charges. Data transfer that AWS bills to a
+box's instance carries its tags and stays in. This list is being confirmed
+against a real filtered delivery.
 
 **1. Find the account that manages billing.** If this account belongs to an AWS
 Organization, only the **management (payer) account** can activate tags, and
@@ -227,7 +234,8 @@ aws ce start-cost-allocation-tag-backfill --backfill-from 2026-01-01T00:00:00Z
 
 **Keep in mind:**
 
-- Don't override `sfk:byoc` in `tags`. The filter matches the value `true`.
+- The module always sets `sfk:byoc = true` on what it creates, even if `tags`
+  sets `sfk:byoc` to something else, so the filter keeps matching.
 - If the account moves to a different AWS Organization, its activation doesn't
   move with it. Activate both keys again in the new management account.
 - Deactivating either key empties the export from then on. Tell Starfolk if you

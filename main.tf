@@ -50,7 +50,9 @@ locals {
   account_id  = data.aws_caller_identity.current.account_id
   external_id = var.external_id != "" ? var.external_id : "sfk-${random_uuid.external_id.result}"
   azs         = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, length(var.subnet_cidrs))
-  common_tags = merge({ "sfk:byoc" = "true" }, var.tags)
+  # sfk:byoc goes last so var.tags can't override it: the "tagged" cost export
+  # filters on it.
+  common_tags = merge(var.tags, { "sfk:byoc" = "true" })
 
   # Shared devbox AMIs are encrypted with a different Starfolk-owned CMK in
   # each AWS region. Keep this map closed rather than accepting an arbitrary

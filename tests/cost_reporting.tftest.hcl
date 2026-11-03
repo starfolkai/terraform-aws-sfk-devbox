@@ -43,6 +43,7 @@ run "account_scope_exports_everything_without_tags" {
 
   variables {
     enable_cost_reporting = true
+    cost_reporting_scope  = "account"
   }
 
   assert {
@@ -79,6 +80,7 @@ run "query_is_pinned" {
 
   variables {
     enable_cost_reporting = true
+    cost_reporting_scope  = "account"
   }
 
   assert {
@@ -151,11 +153,51 @@ run "tagged_scope_rejects_a_stage_that_would_break_the_sql" {
   expect_failures = [var.cost_reporting_scope]
 }
 
+run "scope_is_required_when_reporting_is_on" {
+  # No default: sharing a whole account's cost must be a choice.
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+  }
+
+  expect_failures = [var.cost_reporting_scope]
+}
+
+run "scope_is_not_needed_when_reporting_is_off" {
+  command = plan
+
+  assert {
+    condition     = length(aws_bcmdataexports_export.cost_report) == 0
+    error_message = "With cost reporting off, an unset scope must still plan."
+  }
+}
+
+run "tags_cannot_override_sfk_byoc" {
+  # The "tagged" export filters on sfk:byoc = true.
+  command = plan
+
+  variables {
+    tags = { "sfk:byoc" = "false", team = "infra" }
+  }
+
+  assert {
+    condition     = local.common_tags["sfk:byoc"] == "true" && local.common_tags["team"] == "infra"
+    error_message = "sfk:byoc must stay \"true\" whatever var.tags sets; other tags must pass through."
+  }
+
+  assert {
+    condition     = aws_security_group.this.tags["sfk:byoc"] == "true"
+    error_message = "A module resource must carry sfk:byoc = true even when var.tags sets it."
+  }
+}
+
 run "bucket_name_can_be_overridden" {
   command = apply
 
   variables {
     enable_cost_reporting   = true
+    cost_reporting_scope    = "account"
     cost_report_bucket_name = "acme-starfolk-costs"
   }
 
@@ -170,6 +212,7 @@ run "control_role_reads_only_the_prefix" {
 
   variables {
     enable_cost_reporting = true
+    cost_reporting_scope  = "account"
   }
 
   assert {
