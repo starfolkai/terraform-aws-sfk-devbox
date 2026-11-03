@@ -172,11 +172,15 @@ sees no cost.
 
 **What's left out.** A cost line matches only if AWS bills it to a tagged
 resource. What Starfolk sees is the cost of its boxes, their disks, snapshots
-and images, and the resources this module creates. We expect these to be left
-out: your NAT gateway, public IPv4 addresses (`assign_public_ip`), tax,
-support, and other account-level charges. Data transfer that AWS bills to a
-box's instance carries its tags and stays in. This list is being confirmed
-against a real filtered delivery.
+and images, and the resources this module creates. Left out:
+
+- public IPv4 addresses (`assign_public_ip`): AWS bills them to the box's
+  network interface, which isn't tagged;
+- tax, support, and account-wide services such as GuardDuty, CloudTrail, KMS
+  and VPC flow logs;
+- your NAT gateway, if the subnets route through one.
+
+Data transfer stays in: AWS bills it to the box's instance, which is tagged.
 
 **1. Find the account that manages billing.** If this account belongs to an AWS
 Organization, only the **management (payer) account** can activate tags, and
