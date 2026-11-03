@@ -5,8 +5,8 @@
 # Starfolk stores that cost for your account. It is informational: nothing
 # here feeds a Starfolk invoice.
 #
-# cost_reporting_scope picks which lines the export holds:
-#   "account" (default): every cost line in this account, for an account
+# cost_reporting_scope picks which lines the export holds (required, no default):
+#   "account": every cost line in this account, for an account
 #     dedicated to Starfolk. No tag activation is needed: AWS limits an export
 #     made in a member account to that account's own costs.
 #   "tagged": only lines whose resource carries Starfolk's tags, for an account
@@ -54,7 +54,9 @@ locals {
   # sfk:stage is on everything the coordinator creates (boxes, their volumes,
   # snapshots, images, drive buckets); sfk:byoc is on what this module creates
   # (common_tags). CUR 2.0 names a user tag key user_<key> with ":" as "_".
-  # Untagged lines, such as NAT and data transfer, are left out.
+  # Lines AWS doesn't bill to a tagged resource are left out: public IPv4 (billed
+  # to the untagged network interface), tax, account-wide services and NAT.
+  # Data transfer is billed to the instance, so it stays in.
   cost_report_where = var.cost_reporting_scope == "tagged" ? " WHERE resource_tags.user_sfk_stage = '${var.stage}' OR resource_tags.user_sfk_byoc = 'true'" : ""
   cost_report_query = "SELECT ${join(", ", local.cost_report_columns)} FROM COST_AND_USAGE_REPORT${local.cost_report_where}"
 }
