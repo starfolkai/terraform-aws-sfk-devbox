@@ -38,11 +38,12 @@ run "cost_reporting_is_off_by_default" {
   }
 }
 
-run "exports_everything_without_tags" {
+run "account_scope_exports_everything_without_tags" {
   command = apply
 
   variables {
     enable_cost_reporting = true
+    cost_reporting_scope  = "account"
   }
 
   assert {
@@ -79,6 +80,7 @@ run "query_is_pinned" {
 
   variables {
     enable_cost_reporting = true
+    cost_reporting_scope  = "account"
   }
 
   assert {
@@ -87,11 +89,115 @@ run "query_is_pinned" {
   }
 }
 
+run "tagged_scope_filters_to_starfolk_tags" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "prod"
+  }
+
+  assert {
+    condition     = endswith(local.cost_report_query, " FROM COST_AND_USAGE_REPORT WHERE resource_tags.user_sfk_stage = 'prod' OR resource_tags.user_sfk_byoc = 'true'")
+    error_message = "The tagged scope must keep only lines tagged sfk:stage = <stage> or sfk:byoc = true."
+  }
+
+  assert {
+    # The filter reads resource_tags; the export must still not carry it.
+    condition     = split(" FROM ", local.cost_report_query)[0] == "SELECT ${join(", ", local.cost_report_columns)}" && !contains(local.cost_report_columns, "resource_tags")
+    error_message = "The tagged scope must select the same columns as the account scope, and no tags."
+  }
+
+  assert {
+    condition     = aws_bcmdataexports_export.cost_report[0].export[0].data_query[0].query_statement == local.cost_report_query
+    error_message = "The export must use the filtered query."
+  }
+}
+
+run "tagged_scope_uses_the_stage" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "staging"
+  }
+
+  assert {
+    condition     = strcontains(local.cost_report_query, "resource_tags.user_sfk_stage = 'staging'")
+    error_message = "The tagged filter must match var.stage."
+  }
+}
+
+run "unknown_scope_is_rejected" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "everything"
+  }
+
+  expect_failures = [var.cost_reporting_scope]
+}
+
+run "tagged_scope_rejects_a_stage_that_would_break_the_sql" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "prod' OR 1=1 --"
+  }
+
+  expect_failures = [var.cost_reporting_scope]
+}
+
+run "scope_is_required_when_reporting_is_on" {
+  # No default: sharing a whole account's cost must be a choice.
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+  }
+
+  expect_failures = [var.cost_reporting_scope]
+}
+
+run "scope_is_not_needed_when_reporting_is_off" {
+  command = plan
+
+  assert {
+    condition     = length(aws_bcmdataexports_export.cost_report) == 0
+    error_message = "With cost reporting off, an unset scope must still plan."
+  }
+}
+
+run "tags_cannot_override_sfk_byoc" {
+  # The "tagged" export filters on sfk:byoc = true.
+  command = plan
+
+  variables {
+    tags = { "sfk:byoc" = "false", team = "infra" }
+  }
+
+  assert {
+    condition     = local.common_tags["sfk:byoc"] == "true" && local.common_tags["team"] == "infra"
+    error_message = "sfk:byoc must stay \"true\" whatever var.tags sets; other tags must pass through."
+  }
+
+  assert {
+    condition     = aws_security_group.this.tags["sfk:byoc"] == "true"
+    error_message = "A module resource must carry sfk:byoc = true even when var.tags sets it."
+  }
+}
+
 run "bucket_name_can_be_overridden" {
   command = apply
 
   variables {
     enable_cost_reporting   = true
+    cost_reporting_scope    = "account"
     cost_report_bucket_name = "acme-starfolk-costs"
   }
 
@@ -106,6 +212,7 @@ run "control_role_reads_only_the_prefix" {
 
   variables {
     enable_cost_reporting = true
+    cost_reporting_scope  = "account"
   }
 
   assert {

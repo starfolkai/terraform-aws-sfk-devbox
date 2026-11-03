@@ -444,10 +444,39 @@ variable "enable_cost_reporting" {
     the Starfolk control role can read, so Starfolk can read the AWS cost of
     the account your boxes run in. Informational only: Starfolk does
     not invoice this spend. Creates an S3 bucket and an AWS Data Export; grants
-    the control role read on the export prefix only. The export holds every
-    cost line in this account, so use it only in an account dedicated to
-    Starfolk.
+    the control role read on the export prefix only. See `cost_reporting_scope`
+    for which cost lines the export holds.
   EOT
+}
+
+variable "cost_reporting_scope" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Which cost lines the export holds. Required when enable_cost_reporting is
+    true; there is no default, so sharing a whole account's cost is always a
+    choice. "account": every line in this account; use it only in an account
+    dedicated to Starfolk. "tagged": only lines for resources tagged
+    `sfk:stage = <stage>` or `sfk:byoc = true`, for an account shared with other
+    workloads. "tagged" needs those two tag keys activated as cost-allocation
+    tags (see the README), and leaves out cost not billed to a tagged resource.
+  EOT
+
+  validation {
+    condition     = contains(["account", "tagged"], coalesce(var.cost_reporting_scope, "account"))
+    error_message = "cost_reporting_scope must be \"account\" or \"tagged\"."
+  }
+
+  validation {
+    condition     = !var.enable_cost_reporting || var.cost_reporting_scope != null
+    error_message = "With enable_cost_reporting = true, set cost_reporting_scope: \"account\" for an account dedicated to Starfolk, or \"tagged\" for one shared with other workloads."
+  }
+
+  validation {
+    # The stage is written into the export's SQL as a quoted string.
+    condition     = var.cost_reporting_scope != "tagged" || can(regex("^[A-Za-z0-9_-]+$", var.stage))
+    error_message = "With cost_reporting_scope = \"tagged\", stage may contain only letters, digits, \"-\" and \"_\"."
+  }
 }
 
 
