@@ -124,13 +124,25 @@ invoice this spend. When it's on, the module creates:
 - a bucket-policy grant letting the control role list and read **only** that
   prefix. The control role's own policy is unchanged.
 
-The export contains every cost line in this account, so turn it on only in an
-account dedicated to Starfolk. An export created in an account covers only that
-account's costs, even inside an AWS Organization, so nothing else of yours is
-included. Tags aren't exported.
+`cost_reporting_scope` sets which cost lines the export holds:
+
+- **`"account"`** (default): every cost line in this account. Use it only in an
+  account dedicated to Starfolk. An export created in an account covers only
+  that account's costs, even inside an AWS Organization, so nothing in your
+  other accounts is included. No tag setup is needed.
+- **`"tagged"`**: only lines for resources tagged `sfk:stage = <stage>`
+  (everything Starfolk launches) or `sfk:byoc = true` (everything this module
+  creates). Use it when the account also runs your own workloads. You must
+  activate those two tags for billing first; see
+  [Cost reporting in a shared account](#cost-reporting-in-a-shared-account).
+
+Either way, tags aren't exported: the `"tagged"` filter reads them inside AWS,
+but the export holds the same columns as `"account"`.
 
 ```hcl
 enable_cost_reporting = true
+# Only if this account also runs workloads that aren't Starfolk's:
+# cost_reporting_scope = "tagged"
 ```
 
 The `cost_report_url` output is part of the hand-back you already send to
@@ -145,6 +157,81 @@ reports, that apply stops at the bucket: empty it first, or set
 `cost_report_bucket_force_destroy = true`.
 
 `terraform output -json` yields the values to send back to Starfolk.
+
+## Cost reporting in a shared account
+
+With `cost_reporting_scope = "tagged"`, the export keeps only cost lines whose
+resource is tagged `sfk:stage = <stage>` or `sfk:byoc = true`. AWS only puts a
+tag into billing data once that tag key is **activated as a cost-allocation
+tag**. Until you activate both keys, the export arrives empty, and Starfolk
+sees no cost.
+
+**What's left out.** Cost that isn't on a tagged resource never matches the
+filter: NAT gateway and data transfer for the Starfolk VPC, tax, support, and
+other account-level charges. What Starfolk sees is the cost of its boxes,
+their disks, snapshots and images, and the resources this module creates.
+
+**1. Find the account that manages billing.** If this account belongs to an AWS
+Organization, only the **management (payer) account** can activate tags, and
+the activation applies to every account in the organization. If it is a
+standalone account, use this account.
+
+**2. Wait until AWS has seen each tag key.** A key can only be activated after
+it is on at least one resource, and it can take up to 24 hours to appear in
+the list:
+
+- `sfk:byoc` appears once you've applied this module.
+- `sfk:stage` appears once Starfolk has launched its first box in the
+  account.
+
+**3. Activate both keys** in the management account. Activating doesn't change
+any resource or cost; it only adds the tags to billing data.
+
+- **Console:** Billing and Cost Management → **Cost allocation tags** →
+  **User-defined cost allocation tags**. Select `sfk:stage` and `sfk:byoc`,
+  then **Activate**.
+- **CLI:**
+
+  ```sh
+  aws ce update-cost-allocation-tags-status \
+    --cost-allocation-tags-status TagKey=sfk:stage,Status=Active TagKey=sfk:byoc,Status=Active
+  ```
+
+- **Terraform**, in a configuration that runs as the management account:
+
+  ```hcl
+  resource "aws_ce_cost_allocation_tag" "starfolk" {
+    for_each = toset(["sfk:stage", "sfk:byoc"])
+    tag_key  = each.value
+    status   = "Active"
+  }
+  ```
+
+**4. Check that both keys are active.** Activation can take up to 24 hours to
+take effect.
+
+```sh
+aws ce list-cost-allocation-tags --tag-keys sfk:stage sfk:byoc \
+  --query 'CostAllocationTags[].[TagKey,Status]' --output text
+```
+
+Both lines should end in `Active`.
+
+**5. Optional: backfill earlier months.** Activation applies only to cost from
+then on. To also include earlier months, the management account can backfill
+up to 12 months. The date must be the first day of a month:
+
+```sh
+aws ce start-cost-allocation-tag-backfill --backfill-from 2026-01-01T00:00:00Z
+```
+
+**Keep in mind:**
+
+- Don't override `sfk:byoc` in `tags`. The filter matches the value `true`.
+- If the account moves to a different AWS Organization, its activation doesn't
+  move with it. Activate both keys again in the new management account.
+- Deactivating either key empties the export from then on. Tell Starfolk if you
+  do.
 
 ## Subnets: create or bring your own
 

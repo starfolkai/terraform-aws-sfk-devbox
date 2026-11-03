@@ -444,10 +444,33 @@ variable "enable_cost_reporting" {
     the Starfolk control role can read, so Starfolk can read the AWS cost of
     the account your boxes run in. Informational only: Starfolk does
     not invoice this spend. Creates an S3 bucket and an AWS Data Export; grants
-    the control role read on the export prefix only. The export holds every
-    cost line in this account, so use it only in an account dedicated to
-    Starfolk.
+    the control role read on the export prefix only. See `cost_reporting_scope`
+    for which cost lines the export holds.
   EOT
+}
+
+variable "cost_reporting_scope" {
+  type        = string
+  default     = "account"
+  description = <<-EOT
+    Which cost lines the export holds. "account" (default): every line in this
+    account; use it only in an account dedicated to Starfolk. "tagged": only
+    lines for resources tagged `sfk:stage = <stage>` or `sfk:byoc = true`, for
+    an account shared with other workloads. "tagged" needs those two tag keys
+    activated as cost-allocation tags (see the README), and leaves out untagged
+    cost such as NAT and data transfer.
+  EOT
+
+  validation {
+    condition     = contains(["account", "tagged"], var.cost_reporting_scope)
+    error_message = "cost_reporting_scope must be \"account\" or \"tagged\"."
+  }
+
+  validation {
+    # The stage is written into the export's SQL as a quoted string.
+    condition     = var.cost_reporting_scope != "tagged" || can(regex("^[A-Za-z0-9_-]+$", var.stage))
+    error_message = "With cost_reporting_scope = \"tagged\", stage may contain only letters, digits, \"-\" and \"_\"."
+  }
 }
 
 

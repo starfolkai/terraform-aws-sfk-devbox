@@ -38,7 +38,7 @@ run "cost_reporting_is_off_by_default" {
   }
 }
 
-run "exports_everything_without_tags" {
+run "account_scope_exports_everything_without_tags" {
   command = apply
 
   variables {
@@ -85,6 +85,70 @@ run "query_is_pinned" {
     condition     = local.cost_report_query == "SELECT identity_line_item_id, identity_time_interval, bill_billing_period_start_date, line_item_usage_start_date, line_item_usage_end_date, line_item_usage_account_id, line_item_line_item_type, line_item_product_code, line_item_usage_type, line_item_resource_id, line_item_usage_amount, line_item_unblended_cost, line_item_net_unblended_cost, pricing_public_on_demand_cost, pricing_term, savings_plan_savings_plan_effective_cost, savings_plan_amortized_upfront_commitment_for_billing_period, reservation_reservation_a_r_n, reservation_effective_cost, reservation_unused_amortized_upfront_fee_for_billing_period, reservation_unused_recurring_fee FROM COST_AND_USAGE_REPORT"
     error_message = "The export query changed; update EXPORT_COLUMNS in starfolkai/sfk to match."
   }
+}
+
+run "tagged_scope_filters_to_starfolk_tags" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "prod"
+  }
+
+  assert {
+    condition     = endswith(local.cost_report_query, " FROM COST_AND_USAGE_REPORT WHERE resource_tags.user_sfk_stage = 'prod' OR resource_tags.user_sfk_byoc = 'true'")
+    error_message = "The tagged scope must keep only lines tagged sfk:stage = <stage> or sfk:byoc = true."
+  }
+
+  assert {
+    # The filter reads resource_tags; the export must still not carry it.
+    condition     = split(" FROM ", local.cost_report_query)[0] == "SELECT ${join(", ", local.cost_report_columns)}" && !contains(local.cost_report_columns, "resource_tags")
+    error_message = "The tagged scope must select the same columns as the account scope, and no tags."
+  }
+
+  assert {
+    condition     = aws_bcmdataexports_export.cost_report[0].export[0].data_query[0].query_statement == local.cost_report_query
+    error_message = "The export must use the filtered query."
+  }
+}
+
+run "tagged_scope_uses_the_stage" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "staging"
+  }
+
+  assert {
+    condition     = strcontains(local.cost_report_query, "resource_tags.user_sfk_stage = 'staging'")
+    error_message = "The tagged filter must match var.stage."
+  }
+}
+
+run "unknown_scope_is_rejected" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "everything"
+  }
+
+  expect_failures = [var.cost_reporting_scope]
+}
+
+run "tagged_scope_rejects_a_stage_that_would_break_the_sql" {
+  command = plan
+
+  variables {
+    enable_cost_reporting = true
+    cost_reporting_scope  = "tagged"
+    stage                 = "prod' OR 1=1 --"
+  }
+
+  expect_failures = [var.cost_reporting_scope]
 }
 
 run "bucket_name_can_be_overridden" {
