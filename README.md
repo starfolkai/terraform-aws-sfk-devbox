@@ -504,6 +504,25 @@ guardrails pass rather than blocking launches. Public IP is **not** set on
 `RunInstances`; it's inherited from the subnet's auto-assign setting, which this
 module controls via `assign_public_ip`.
 
+## Tagging the boxes Starfolk creates
+
+`tags` applies to what this module creates (role, subnets, security group) and
+to what Starfolk creates here later: every devbox instance, its EBS volumes, and
+the snapshots and images it takes in your account. Those carry Starfolk's own
+`sfk:*` and `Name` tags too, so keys like those are left out of the
+`dynamic_resource_tags` output that carries your tags to Starfolk. Starfolk
+accepts at most 30.
+
+```hcl
+tags = { "cost-center" = "eng-tools", "owner" = "platform" }
+```
+
+They travel in the hand-back, so re-send it (paste it again on the workspace
+page) after changing them, then re-run the setup test. They apply to resources
+created after that; running boxes keep the tags they launched with. Your tag
+policies and SCPs are checked by the setup test's dry-run launch, which carries
+these tags.
+
 ## Access postures → variables
 
 Pick how users reach the boxes:
@@ -619,6 +638,7 @@ output "sfk_handback" {
     subnet_ids        = module.sfk_byoc.subnet_ids
     security_group_id = module.sfk_byoc.security_group_id
     instance_profile  = module.sfk_byoc.instance_profile
+    dynamic_resource_tags = module.sfk_byoc.dynamic_resource_tags  # tags for the boxes Starfolk creates
   }
 }
 ```
