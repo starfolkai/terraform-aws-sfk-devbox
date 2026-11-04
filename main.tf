@@ -47,9 +47,11 @@ data "aws_security_group" "ingress_source" {
 resource "random_uuid" "external_id" {}
 
 locals {
-  account_id  = data.aws_caller_identity.current.account_id
-  external_id = var.external_id != "" ? var.external_id : "sfk-${random_uuid.external_id.result}"
-  azs         = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, length(var.subnet_cidrs))
+  # Bump MODULE_VERSION before each release; tag CI verifies the release matches.
+  module_version = trimspace(file("${path.module}/MODULE_VERSION"))
+  account_id     = data.aws_caller_identity.current.account_id
+  external_id    = var.external_id != "" ? var.external_id : "sfk-${random_uuid.external_id.result}"
+  azs            = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, length(var.subnet_cidrs))
   # sfk:byoc goes last so var.tags can't override it: the "tagged" cost export
   # filters on it.
   common_tags = merge(var.tags, { "sfk:byoc" = "true" })
@@ -155,7 +157,10 @@ resource "aws_security_group" "this" {
   name        = "${var.name_prefix}-sg"
   description = "Starfolk BYOC devboxes"
   vpc_id      = var.vpc_id
-  tags        = merge(local.common_tags, { Name = "${var.name_prefix}-sg" })
+  tags = merge(local.common_tags, {
+    Name                      = "${var.name_prefix}-sg"
+    "sfk:byoc_module_version" = local.module_version
+  })
 
   lifecycle {
     postcondition {
