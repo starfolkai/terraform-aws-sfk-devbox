@@ -7,7 +7,7 @@
 #
 #   terraform init && terraform plan   # review with your security team
 #   terraform apply
-#   terraform output -json sfk_handback   # send this back to Starfolk
+#   sfk cloud-account register            # paste the sfk_handback output
 #
 # Pin `source` to a release tag you have reviewed — never float on the default
 # branch for something that creates IAM roles in your account.
@@ -42,7 +42,7 @@ provider "aws" {
 }
 
 module "sfk_byoc" {
-  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=1.1.1"
+  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=v1.3.0"
 
   region         = "us-west-2"                      # must match provider "aws" region
   vpc_id         = "vpc-0123456789abcdef0"          # your existing shared VPC
@@ -72,19 +72,10 @@ module "sfk_byoc" {
   # external_id               = "…"   # omit to auto-generate, then send the output back
 }
 
-# Send this whole object back to Starfolk (paste into the Cloud Accounts admin
-# console, or hand to your Starfolk contact). external_id is not a secret.
+# Register this with Starfolk: run `sfk cloud-account register` and paste the
+# sfk_handback block from the apply output (or pipe in
+# `terraform output -json sfk_handback`). You can also paste it into
+# Settings → AWS Account. external_id is not a secret.
 output "sfk_handback" {
-  value = {
-    account_id        = module.sfk_byoc.account_id
-    access_mode       = module.sfk_byoc.access_mode
-    region            = module.sfk_byoc.region
-    role_arn          = module.sfk_byoc.role_arn
-    external_id       = module.sfk_byoc.external_id
-    subnet_ids        = module.sfk_byoc.subnet_ids
-    security_group_id = module.sfk_byoc.security_group_id
-    instance_profile  = module.sfk_byoc.instance_profile
-    # null unless enable_cost_reporting = true.
-    cost_report_url = module.sfk_byoc.cost_report_url
-  }
+  value = module.sfk_byoc.handback
 }

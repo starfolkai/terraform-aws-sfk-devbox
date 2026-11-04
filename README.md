@@ -578,7 +578,7 @@ provider "aws" {
 }
 
 module "sfk_byoc" {
-  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=1.1.1" # pin a reviewed tag
+  source = "github.com/starfolkai/terraform-aws-sfk-devbox?ref=v1.3.0" # pin a reviewed tag
 
   region            = "us-west-2"                         # must match provider "aws" region
   vpc_id            = "vpc-0123456789abcdef0"          # your existing shared VPC
@@ -610,16 +610,7 @@ module "sfk_byoc" {
 }
 
 output "sfk_handback" {
-  value = {
-    account_id        = module.sfk_byoc.account_id
-    access_mode       = module.sfk_byoc.access_mode  # "public" | "vpn_private", from assign_public_ip
-    region            = module.sfk_byoc.region
-    role_arn          = module.sfk_byoc.role_arn
-    external_id       = module.sfk_byoc.external_id
-    subnet_ids        = module.sfk_byoc.subnet_ids
-    security_group_id = module.sfk_byoc.security_group_id
-    instance_profile  = module.sfk_byoc.instance_profile
-  }
+  value = module.sfk_byoc.handback
 }
 ```
 
@@ -633,12 +624,35 @@ override; new callers should omit it and let `region` select the key.
 
 The `access_mode` output is derived from `assign_public_ip` (`public` when boxes get public IPs, `vpn_private` when they don't) — it tells Starfolk how to register the account so the coordinator addresses boxes correctly (public IP vs. private-IP-over-VPN). Send it back with the rest.
 
-`terraform init && terraform plan` → review with your security team → `terraform apply`, then send the `sfk_handback` output to Starfolk.
+`terraform init && terraform plan` → review with your security team → `terraform apply`, then register the `sfk_handback` output with Starfolk (below).
 
 ## Registering with Starfolk (the second half)
 
-This module creates the AWS side. Registering these values with your Starfolk
-environment is a separate step — send Starfolk the `sfk_handback` output via slack. There are no secrets here- only AWS ARNs
+This module creates the AWS side. Registering it with your Starfolk workspace is
+a separate step, done by a workspace admin. The `handback` output holds
+everything Starfolk needs. There are no secrets in it, only AWS IDs and ARNs.
+
+With the `sfk` CLI, logged in as a workspace admin:
+
+```sh
+sfk cloud-account register
+```
+
+then paste the `sfk_handback = { ... }` block from the end of `terraform apply`
+and press Ctrl-D. You can paste the whole apply log, the output of
+`terraform output sfk_handback`, or pipe in the JSON:
+
+```sh
+terraform output -json sfk_handback | sfk cloud-account register
+```
+
+It registers the account, then runs Starfolk's setup test and shows each check.
+Re-run it after changing this module's inputs. `sfk cloud-account show` shows
+what's registered. You can also paste the JSON into **Settings → AWS Account**
+in the Starfolk dashboard.
+
+The hand-back includes `module_version`, this module's release tag, so Starfolk
+knows which release your account was set up with.
 
 ## Requirements
 
