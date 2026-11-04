@@ -20,7 +20,7 @@ run "security_group_reports_module_version" {
   }
 
   assert {
-    condition     = lookup(aws_security_group.this.tags, "sfk:byoc_module_version", null) == "v1.2.3"
+    condition     = lookup(aws_security_group.this.tags, "sfk:byoc_module_version", null) == trimspace(file("MODULE_VERSION"))
     error_message = "The security group must report this release, even if customer tags try to override it."
   }
   assert {

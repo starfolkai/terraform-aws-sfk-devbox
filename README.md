@@ -678,9 +678,21 @@ or hand-back outputs are needed. Older releases without the tag show **Unknown**
 The tag identifies the declared module release; it does not prove that all
 resources or permissions still match that release.
 
-For maintainers: `MODULE_VERSION` is the release version, starting with `v1.2.3`.
-Update it with each release, together with the version assertion in
-`tests/module_version.tftest.hcl`. Tag CI checks that a `v*` release tag matches
-this file. The module sets the security-group version tag after customer tags,
-so a value in `tags` cannot override it. Do not publish a release under a
-different version without updating this file.
+The module sets the security-group version tag after customer tags, so a value
+in `tags` cannot override it. `MODULE_VERSION` records the last released version;
+unreleased changes on `main` retain that version. Pin a release tag to identify
+an exact release.
+
+### Publishing a release (maintainers)
+
+In GitHub Actions, select **Release → Run workflow**, keep the branch set to
+**main**, and enter the new `vX.Y.Z` version (for example, `v1.2.3`). The workflow
+updates `MODULE_VERSION`, runs formatting, validation and module tests, then
+publishes the version commit and matching tag together and creates the GitHub
+release. Do not hand-edit the file or create release tags separately.
+
+Versions must increase and use `vX.Y.Z` without leading zeroes. Releases run one
+at a time. If `main` changes during validation, the atomic push fails without
+publishing either ref; rerun against current main. If release creation fails
+after the push, rerunning with the same version finishes from the existing tag.
+The tag-push CI check also catches mismatches on manually created tags.
