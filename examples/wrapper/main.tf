@@ -70,6 +70,10 @@ module "sfk_byoc" {
   # enable_coordinator_access = true                                      # opt-in 7681
   # coordinator_ingress_cidrs = ["<starfolk-coordinator-egress>/32"]     # tighten 7681
   # external_id               = "…"   # omit to auto-generate, then send the output back
+
+  # Optional: tags for these resources and for the boxes, volumes, snapshots and
+  # images Starfolk creates here (on top of its own).
+  # tags = { "cost-center" = "eng-tools", "owner" = "platform" }
 }
 
 # Send this whole object back to Starfolk (paste into the Cloud Accounts admin
@@ -86,5 +90,7 @@ output "sfk_handback" {
     instance_profile  = module.sfk_byoc.instance_profile
     # null unless enable_cost_reporting = true.
     cost_report_url = module.sfk_byoc.cost_report_url
+    # Your `tags`, for the boxes, volumes, snapshots and images Starfolk creates.
+    dynamic_resource_tags = module.sfk_byoc.dynamic_resource_tags
   }
 }

@@ -504,6 +504,41 @@ guardrails pass rather than blocking launches. Public IP is **not** set on
 `RunInstances`; it's inherited from the subnet's auto-assign setting, which this
 module controls via `assign_public_ip`.
 
+## Tagging the boxes Starfolk creates
+
+`tags` applies to what this module creates (role, subnets, security group) and
+to what Starfolk creates here later: every devbox instance, its EBS volumes, and
+the snapshots and images it takes in your account. Those carry Starfolk's own
+`sfk:*` and `Name` tags too, so keys like those are left out of the
+`dynamic_resource_tags` output that carries your tags to Starfolk. Starfolk
+accepts at most 30.
+
+```hcl
+tags = { "cost-center" = "eng-tools", "owner" = "platform" }
+```
+
+**Provider `default_tags` are not included.** They reach this module's resources,
+but Starfolk creates the boxes with its own credentials, not your provider, so
+the boxes never get them. Repeat any you want on the boxes in `tags` (plan and apply
+print a warning, `default_tags_not_sent_to_starfolk`, naming the missing keys):
+
+```hcl
+provider "aws" {
+  default_tags { tags = { "cost-center" = "eng-tools" } }
+}
+
+module "sfk_byoc" {
+  # ...
+  tags = { "cost-center" = "eng-tools" } # repeated, so the boxes get it too
+}
+```
+
+They travel in the hand-back, so re-send it (paste it again on the workspace
+page) after changing them, then re-run the setup test. They apply to resources
+created after that; running boxes keep the tags they launched with. Your tag
+policies and SCPs are checked by the setup test's dry-run launch, which carries
+these tags.
+
 ## Access postures → variables
 
 Pick how users reach the boxes:
@@ -611,14 +646,16 @@ module "sfk_byoc" {
 
 output "sfk_handback" {
   value = {
-    account_id        = module.sfk_byoc.account_id
-    access_mode       = module.sfk_byoc.access_mode  # "public" | "vpn_private", from assign_public_ip
-    region            = module.sfk_byoc.region
-    role_arn          = module.sfk_byoc.role_arn
-    external_id       = module.sfk_byoc.external_id
-    subnet_ids        = module.sfk_byoc.subnet_ids
-    security_group_id = module.sfk_byoc.security_group_id
-    instance_profile  = module.sfk_byoc.instance_profile
+    account_id            = module.sfk_byoc.account_id
+    access_mode           = module.sfk_byoc.access_mode  # "public" | "vpn_private", from assign_public_ip
+    region                = module.sfk_byoc.region
+    role_arn              = module.sfk_byoc.role_arn
+    external_id           = module.sfk_byoc.external_id
+    subnet_ids            = module.sfk_byoc.subnet_ids
+    security_group_id     = module.sfk_byoc.security_group_id
+    instance_profile      = module.sfk_byoc.instance_profile
+    # Your `tags`, for the boxes Starfolk creates.
+    dynamic_resource_tags = module.sfk_byoc.dynamic_resource_tags
   }
 }
 ```

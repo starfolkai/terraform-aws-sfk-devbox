@@ -433,7 +433,16 @@ variable "ami_kms_key_arns" {
 variable "tags" {
   type        = map(string)
   default     = {}
-  description = "Extra tags merged onto every resource this module creates."
+  description = <<-EOT
+    Extra tags merged onto every resource this module creates, and onto every
+    resource Starfolk creates here at runtime: devbox instances, their EBS
+    volumes, and the snapshots and images taken from them. For the runtime
+    ones they travel in the `dynamic_resource_tags` output, so re-send the
+    hand-back after changing them. Keys starting with `sfk:`, and `Name`, are
+    Starfolk's and are left out of that output. Starfolk accepts at most 30.
+    The AWS provider's `default_tags` are not included: list any you want on
+    the boxes here too (plan warns about any that are missing).
+  EOT
 }
 
 variable "enable_cost_reporting" {
