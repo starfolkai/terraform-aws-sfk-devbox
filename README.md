@@ -666,3 +666,21 @@ buckets; it gets no direct file-read grant. Customer account registration is unc
 role names use the first 16 hex characters of SHA256 of the registered control ARN. Both source
 and replica stay in the registered account; the replica uses us-west-2, or us-east-2 when the
 primary is us-west-2.
+
+
+## Module version reporting
+
+The module tags its dedicated security group with `sfk:byoc_module_version`.
+Starfolk reads that tag during the AWS account setup test and displays the last
+observed version and check time. After upgrading and applying the module, run
+**Test** in Starfolk's AWS Account settings to refresh it. No new AWS permissions
+or hand-back outputs are needed. Older releases without the tag show **Unknown**.
+The tag identifies the declared module release; it does not prove that all
+resources or permissions still match that release.
+
+For maintainers: `MODULE_VERSION` is the release version, starting with `v1.2.3`.
+Update it with each release, together with the version assertion in
+`tests/module_version.tftest.hcl`. Tag CI checks that a `v*` release tag matches
+this file. The module sets the security-group version tag after customer tags,
+so a value in `tags` cannot override it. Do not publish a release under a
+different version without updating this file.
