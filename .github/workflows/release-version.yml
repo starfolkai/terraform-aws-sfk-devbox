@@ -1,0 +1,26 @@
+name: Release version
+
+# A release tag must match module_version in version.tf, which is what the
+# hand-back reports to Starfolk.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Tag matches module_version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare
+        run: |
+          version=$(sed -n 's/^ *module_version *= *"\(.*\)"/\1/p' version.tf)
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error file=version.tf::module_version is \"$version\" but the tag is \"$GITHUB_REF_NAME\". Bump version.tf, then tag that commit."
+            exit 1
+          fi
+          echo "module_version $version matches the tag."

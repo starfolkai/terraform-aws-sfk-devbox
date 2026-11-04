@@ -1,5 +1,31 @@
 # The values to hand back to Starfolk (they land in the workspace's
-# cloud_accounts row). `terraform output -json` gives a clean payload.
+# cloud_accounts row). `handback` collects them into one object; the rest are
+# the same values one at a time.
+
+locals {
+  cost_report_url = var.enable_cost_reporting ? "s3://${aws_s3_bucket.cost_report[0].bucket}/${local.cost_report_prefix}/${local.cost_report_name}" : null
+}
+
+output "handback" {
+  value = {
+    account_id        = local.account_id
+    access_mode       = local.access_mode
+    region            = var.region
+    role_arn          = aws_iam_role.control.arn
+    external_id       = local.external_id
+    subnet_ids        = local.subnet_ids_effective
+    security_group_id = aws_security_group.this.id
+    instance_profile  = local.instance_profile_name
+    cost_report_url   = local.cost_report_url
+    module_version    = local.module_version
+  }
+  description = "Everything Starfolk needs, as one object. Register it with `sfk cloud-account register`, or paste it into Settings → AWS Account."
+}
+
+output "module_version" {
+  value       = local.module_version
+  description = "Release tag of this module, e.g. v1.3.0."
+}
 
 output "account_id" {
   value       = local.account_id
@@ -49,6 +75,6 @@ output "instance_profile" {
 }
 
 output "cost_report_url" {
-  value       = var.enable_cost_reporting ? "s3://${aws_s3_bucket.cost_report[0].bucket}/${local.cost_report_prefix}/${local.cost_report_name}" : null
+  value       = local.cost_report_url
   description = "Where the cost export lands (s3://bucket/prefix/export-name). Send it to Starfolk along with role_arn. Null when enable_cost_reporting = false."
 }
