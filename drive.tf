@@ -38,7 +38,7 @@ resource "aws_iam_role_policy" "drive" {
     Statement = [
       {
         Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+        Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
         Resource = [
           "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}/$${aws:PrincipalTag/workspace_id}/$${aws:PrincipalTag/user_id}",
           "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}/$${aws:PrincipalTag/workspace_id}/$${aws:PrincipalTag/user_id}/*",
@@ -47,7 +47,7 @@ resource "aws_iam_role_policy" "drive" {
       },
       {
         Effect   = "Allow"
-        Action   = "s3:ListBucket"
+        Action   = ["s3:ListBucket", "s3:ListBucketVersions"]
         Resource = "arn:aws:s3:::$${aws:PrincipalTag/bucket_name}"
         Condition = { StringLike = {
           "aws:PrincipalTag/bucket_name" = ["starfolk-drive-${var.stage}-workspace-$${aws:PrincipalTag/workspace_id}-*", "starfolk-drive-$${aws:PrincipalTag/workspace_id}-*"]

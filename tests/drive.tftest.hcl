@@ -17,6 +17,10 @@ run "workspace_storage_has_scoped_roles_and_no_instance_grant" {
     values = { arn = "arn:aws:ec2:us-east-2:123456789012:security-group/sg-0123456789abcdef0" }
   }
   assert {
+    condition = contains(jsondecode(aws_iam_role_policy.drive.policy).Statement[0].Action, "s3:GetObjectVersion") && contains(jsondecode(aws_iam_role_policy.drive.policy).Statement[1].Action, "s3:ListBucketVersions")
+    error_message = "Drive owner sessions must be able to list and read their retained file versions."
+  }
+  assert {
     condition     = aws_iam_role.drive.name == "sfk-drive-${substr(sha256(aws_iam_role.control.arn), 0, 16)}"
     error_message = "The broker and customer module must derive the same unique role name."
   }
