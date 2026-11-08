@@ -530,6 +530,7 @@ resource "aws_iam_role_policy" "control" {
           "s3:GetBucketPublicAccessBlock", "s3:PutBucketPublicAccessBlock",
           "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
           "s3:GetBucketVersioning", "s3:PutBucketVersioning",
+          "s3:GetBucketCORS", "s3:PutBucketCORS",
           "s3:GetBucketPolicy", "s3:PutBucketPolicy",
           "s3:GetLifecycleConfiguration", "s3:PutLifecycleConfiguration",
           "s3:GetReplicationConfiguration", "s3:PutReplicationConfiguration",
