@@ -35,7 +35,7 @@ passes the input through an environment variable. The script requires a clean,
 current main checkout, rejects non-increasing new versions, and never force-pushes.
 The existing tag-push mismatch check remains a guard for manual tags. Checks run
 before publishing, so a failing tree is never pushed; the app-token push also
-starts tag-push CI, which re-checks that `MODULE_VERSION` matches the tag.
+starts CI on main and on the tag; the tag run re-checks that `MODULE_VERSION` matches the tag.
 
 ## Alternatives and tradeoffs
 
@@ -49,15 +49,18 @@ main later began requiring pull requests, and the first release (v1.2.3) was
 rejected: `GITHUB_TOKEN` cannot bypass that rule. We chose to let a dedicated
 release GitHub App bypass it, over a release PR or tags off main, to keep
 releasing a single action with `MODULE_VERSION` on main in step with releases.
-The tradeoff: one actor can write main without review, so its key is a secret
-worth guarding, and only this workflow uses it.
+The tradeoff: one actor can write main without review. Its key is stored only in
+a `release` environment limited to main, so a branch's workflow cannot read it,
+and the job's token is limited to Contents write.
 
 Setup (repo admin, once):
 
 1. A GitHub App installed on this repository only, with Contents: read & write.
 2. Branch protection for main lists that app under "Allow specified actors to
    bypass required pull requests".
-3. Repository secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`.
+3. An environment named `release` whose deployment branches are limited to
+   main, holding secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`
+   (environment secrets, not repository secrets).
 
 ## Failure modes
 
@@ -84,6 +87,7 @@ Actionlint 1.7.7 passed both workflows.
 
 ## Rollout plan
 
-Merge the module PR after review, then run Release on main with the next version
-(currently `v1.2.3`). This change itself publishes no release and applies no AWS
+Merge the module PR after review. Complete the branch-protection setup above,
+then run Release on main with the next version (currently `v1.2.3`; the
+rejected first attempt published neither ref, so it can be reused). This change itself publishes no release and applies no AWS
 infrastructure. Customers upgrade their pin and apply to receive the reporting tag.
