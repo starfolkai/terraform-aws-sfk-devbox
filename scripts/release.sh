@@ -17,9 +17,17 @@ if [[ $(git rev-parse HEAD) != "$(git rev-parse origin/main)" ]]; then
   exit 1
 fi
 
+# GitHub locks release tags only when repository release immutability is enabled.
+# Check before changing MODULE_VERSION or pushing either ref. The release app
+# needs Administration read to inspect this setting, not write to change it.
+if ! enabled=$(gh api 'repos/{owner}/{repo}/immutable-releases' --jq '.enabled') || [[ $enabled != true ]]; then
+  echo "Enable release immutability in repository Settings > General > Releases, and grant the release app Administration read." >&2
+  exit 1
+fi
+
 if git show-ref --verify --quiet "refs/tags/$version"; then
   # A run can stop after the atomic push but before GitHub creates the release.
-  # The next dispatch/rerun resumes from the immutable tag, even if main moved.
+  # The next dispatch/rerun resumes from that tag, even if main moved.
   git merge-base --is-ancestor "$version" origin/main
   if [[ $(git show "$version:MODULE_VERSION") != "$version" ]]; then
     echo "Existing tag does not declare $version; refusing to publish." >&2
@@ -64,3 +72,10 @@ if gh release view "$version" >/dev/null 2>&1; then
 else
   gh release create "$version" --verify-tag --generate-notes --title "$version"
 fi
+
+# Also check retries: enabling the repository setting does not lock old releases.
+if ! immutable=$(gh api "repos/{owner}/{repo}/releases/tags/$version" --jq '.immutable') || [[ $immutable != true ]]; then
+  echo "Release $version is not confirmed immutable; inspect it before retrying. Existing releases are not changed." >&2
+  exit 1
+fi
+echo "Release $version is immutable."

@@ -44,12 +44,26 @@ class ReleaseTest(unittest.TestCase):
         for name, body in {
             "terraform": 'exit "${TERRAFORM_EXIT:-0}"',
             "gh": '''
-if [[ "$1 $2" == "release view" ]]; then
-  test -f "$RELEASE_RECORD"
-else
-  test "${RELEASE_FAIL:-0}" = 0 || exit 1
-  printf '%s\\n' "$3" > "$RELEASE_RECORD"
-fi
+case "$1 $2" in
+  "api repos/{owner}/{repo}/immutable-releases")
+    test "${SETTINGS_FAIL:-0}" = 0 || exit 1
+    printf '%s\\n' "${IMMUTABILITY_ENABLED:-true}"
+    ;;
+  "api repos/{owner}/{repo}/releases/tags/"*)
+    test -f "$RELEASE_RECORD"
+    test "${VERIFY_FAIL:-0}" = 0 || exit 1
+    printf '%s\\n' "${RELEASE_IMMUTABLE:-true}"
+    ;;
+  "release view")
+    test -f "$RELEASE_RECORD"
+    ;;
+  "release create")
+    test "${RELEASE_FAIL:-0}" = 0 || exit 1
+    test ! -f "$RELEASE_RECORD"
+    printf '%s\\n' "$3" > "$RELEASE_RECORD"
+    ;;
+  *) echo "Unexpected gh call: $*" >&2; exit 1 ;;
+esac
 ''',
         }.items():
             path = self.bin / name
@@ -93,6 +107,42 @@ fi
     def test_failed_validation_does_not_publish(self):
         self.assertNotEqual(self.release(TERRAFORM_EXIT="1").returncode, 0)
         self.assert_unpublished()
+
+    def test_disabled_or_unreadable_immutability_publishes_nothing(self):
+        for env in [
+            {"IMMUTABILITY_ENABLED": "false"},
+            {"IMMUTABILITY_ENABLED": "null"},
+            {"SETTINGS_FAIL": "1"},
+        ]:
+            with self.subTest(env=env):
+                result = self.release(**env)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Enable release immutability", result.stderr)
+                self.assert_unpublished()
+                self.assertEqual(self.git("status", "--porcelain").stdout, "")
+
+    def test_new_mutable_release_fails_verification(self):
+        result = self.release(RELEASE_IMMUTABLE="false")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("not confirmed immutable", result.stderr)
+        self.assertTrue(self.release_file.exists())
+
+    def test_existing_mutable_release_is_not_recreated(self):
+        self.assertEqual(self.release().returncode, 0)
+        head = self.git("rev-parse", "HEAD").stdout
+        result = self.release(RELEASE_IMMUTABLE="false")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("not confirmed immutable", result.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout, head)
+        self.assertEqual(self.release_file.read_text(), "v1.2.3\n")
+
+    def test_verification_failure_can_be_retried(self):
+        result = self.release(VERIFY_FAIL="1")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("not confirmed immutable", result.stderr)
+        head = self.git("rev-parse", "HEAD").stdout
+        self.assertEqual(self.release().returncode, 0)
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout, head)
 
     def test_release_api_failure_resumes_from_tag_even_after_main_moves(self):
         self.assertNotEqual(self.release(RELEASE_FAIL="1").returncode, 0)
