@@ -45,7 +45,7 @@ main.
 
 ## Branch protection
 
-main later began requiring pull requests, and the first release (v1.2.3) was
+main later began requiring pull requests, and the first release attempt (v1.2.3) was
 rejected: `GITHUB_TOKEN` cannot bypass that rule. We chose to let a dedicated
 release GitHub App bypass it, over a release PR or tags off main, to keep
 releasing a single action with `MODULE_VERSION` on main in step with releases.
@@ -88,6 +88,8 @@ Actionlint 1.7.7 passed both workflows.
 ## Rollout plan
 
 Merge the module PR after review. Complete the branch-protection setup above,
-then run Release on main with the next version (currently `v1.2.3`; the
-rejected first attempt published neither ref, so it can be reused). This change itself publishes no release and applies no AWS
+then run Release on main with the next version, `v1.3.0`: main adds features
+since v1.2.2 (#27, #29, #31), and Starfolk's coordinator names v1.3.0 as the
+minimum for BYOC image regeneration. The rejected v1.2.3 attempt published
+nothing. This change itself publishes no release and applies no AWS
 infrastructure. Customers upgrade their pin and apply to receive the reporting tag.
