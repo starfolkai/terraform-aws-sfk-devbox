@@ -19,13 +19,25 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    # The app's secrets live only in this environment, which only main may use,
+    # so no other workflow or branch can read the key that bypasses review.
+    environment: release
     steps:
+      # main requires pull requests. The release app is the one actor allowed to
+      # bypass that, so every write below (main, tag, release) uses its token,
+      # not GITHUB_TOKEN. See docs/designs/20261104_release_workflow.md.
+      - id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -34,5 +46,5 @@ jobs:
       - name: Validate and publish release
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: bash scripts/release.sh "$RELEASE_VERSION"

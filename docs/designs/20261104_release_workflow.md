@@ -29,18 +29,42 @@ commits the bump and pushes main plus the matching tag atomically. It then creat
 the GitHub release. Tests read the version file instead of a separate constant.
 The initial value is the existing latest release, `v1.2.2`.
 
-The workflow has repository-content write permission. It runs only from main and
+The workflow writes with a GitHub App token, not `GITHUB_TOKEN` (see
+"Branch protection" below). It runs only from main and
 passes the input through an environment variable. The script requires a clean,
 current main checkout, rejects non-increasing new versions, and never force-pushes.
 The existing tag-push mismatch check remains a guard for manual tags. Checks run
-before publishing because pushes using `GITHUB_TOKEN` do not start push workflows.
+before publishing, so a failing tree is never pushed; the app-token push also
+starts CI on main and on the tag; the tag run re-checks that `MODULE_VERSION` matches the tag.
 
 ## Alternatives and tradeoffs
 
 Manual edits plus tag CI still require maintainers to coordinate two writes.
 The action avoids that coordination, at the cost of a version-only bot commit on
-main. This repository currently allows that write. Adding branch protection will
-require revisiting the release identity or using a release PR.
+main.
+
+## Branch protection
+
+main later began requiring pull requests, and the first release attempt (v1.2.3) was
+rejected: `GITHUB_TOKEN` cannot bypass that rule. We chose to let a dedicated
+release GitHub App bypass it, over a release PR or tags off main, to keep
+releasing a single action with `MODULE_VERSION` on main in step with releases.
+The tradeoff: one actor can write main without review. Its bypass is set to
+"always" on main's single ruleset, so it also skips that ruleset's force-push
+and deletion rules: whoever holds the key could rewrite or delete main, not
+only add a commit. `release.sh` never force-pushes. We accepted this over
+splitting the ruleset (PR #34, Q1). Its key is stored only in
+a `release` environment limited to main, so a branch's workflow cannot read it,
+and the job's token is limited to Contents write.
+
+Setup (repo admin, once):
+
+1. A GitHub App installed on this repository only, with Contents: read & write.
+2. main's ruleset lists that app as a bypass actor, mode "Always" (classic
+   branch protection on main is off).
+3. An environment named `release` whose deployment branches are limited to
+   main, holding secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`
+   (environment secrets, not repository secrets).
 
 ## Failure modes
 
@@ -67,6 +91,9 @@ Actionlint 1.7.7 passed both workflows.
 
 ## Rollout plan
 
-Merge the module PR after review, then run Release on main with the next version
-(currently `v1.2.3`). This change itself publishes no release and applies no AWS
+Merge the module PR after review. Complete the branch-protection setup above,
+then run Release on main with the next version, `v1.3.0`: main adds features
+since v1.2.2 (#27, #29, #31), and Starfolk's coordinator names v1.3.0 as the
+minimum for BYOC image regeneration. The rejected v1.2.3 attempt published
+nothing. This change itself publishes no release and applies no AWS
 infrastructure. Customers upgrade their pin and apply to receive the reporting tag.
