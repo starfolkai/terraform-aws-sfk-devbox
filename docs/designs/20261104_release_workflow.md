@@ -49,15 +49,19 @@ main later began requiring pull requests, and the first release attempt (v1.2.3)
 rejected: `GITHUB_TOKEN` cannot bypass that rule. We chose to let a dedicated
 release GitHub App bypass it, over a release PR or tags off main, to keep
 releasing a single action with `MODULE_VERSION` on main in step with releases.
-The tradeoff: one actor can write main without review. Its key is stored only in
+The tradeoff: one actor can write main without review. Its bypass is set to
+"always" on main's single ruleset, so it also skips that ruleset's force-push
+and deletion rules: whoever holds the key could rewrite or delete main, not
+only add a commit. `release.sh` never force-pushes. We accepted this over
+splitting the ruleset (PR #34, Q1). Its key is stored only in
 a `release` environment limited to main, so a branch's workflow cannot read it,
 and the job's token is limited to Contents write.
 
 Setup (repo admin, once):
 
 1. A GitHub App installed on this repository only, with Contents: read & write.
-2. Branch protection for main lists that app under "Allow specified actors to
-   bypass required pull requests".
+2. main's ruleset lists that app as a bypass actor, mode "Always" (classic
+   branch protection on main is off).
 3. An environment named `release` whose deployment branches are limited to
    main, holding secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`
    (environment secrets, not repository secrets).
