@@ -41,8 +41,8 @@ if parts(sys.argv[2]) <= parts(sys.argv[1]):
 PY
   printf '%s\n' "$version" > MODULE_VERSION
 
-  # GITHUB_TOKEN pushes do not start push workflows. Validate the bumped tree
-  # here before publishing, rather than relying on tag-push CI to run later.
+  # Validate the bumped tree before publishing, so a failing tree never
+  # reaches main; tag-push CI runs only after the push.
   terraform fmt -check -recursive -diff
   terraform init -backend=false -input=false
   terraform validate

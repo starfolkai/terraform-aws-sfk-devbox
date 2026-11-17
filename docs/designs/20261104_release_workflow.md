@@ -29,18 +29,35 @@ commits the bump and pushes main plus the matching tag atomically. It then creat
 the GitHub release. Tests read the version file instead of a separate constant.
 The initial value is the existing latest release, `v1.2.2`.
 
-The workflow has repository-content write permission. It runs only from main and
+The workflow writes with a GitHub App token, not `GITHUB_TOKEN` (see
+"Branch protection" below). It runs only from main and
 passes the input through an environment variable. The script requires a clean,
 current main checkout, rejects non-increasing new versions, and never force-pushes.
 The existing tag-push mismatch check remains a guard for manual tags. Checks run
-before publishing because pushes using `GITHUB_TOKEN` do not start push workflows.
+before publishing, so a failing tree is never pushed; the app-token push also
+starts tag-push CI, which re-checks that `MODULE_VERSION` matches the tag.
 
 ## Alternatives and tradeoffs
 
 Manual edits plus tag CI still require maintainers to coordinate two writes.
 The action avoids that coordination, at the cost of a version-only bot commit on
-main. This repository currently allows that write. Adding branch protection will
-require revisiting the release identity or using a release PR.
+main.
+
+## Branch protection
+
+main later began requiring pull requests, and the first release (v1.2.3) was
+rejected: `GITHUB_TOKEN` cannot bypass that rule. We chose to let a dedicated
+release GitHub App bypass it, over a release PR or tags off main, to keep
+releasing a single action with `MODULE_VERSION` on main in step with releases.
+The tradeoff: one actor can write main without review, so its key is a secret
+worth guarding, and only this workflow uses it.
+
+Setup (repo admin, once):
+
+1. A GitHub App installed on this repository only, with Contents: read & write.
+2. Branch protection for main lists that app under "Allow specified actors to
+   bypass required pull requests".
+3. Repository secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`.
 
 ## Failure modes
 
