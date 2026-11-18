@@ -132,8 +132,6 @@ Before running the updated action, a repository admin must:
    `gh api --method PUT repos/starfolkai/terraform-aws-sfk-devbox/immutable-releases`
    with an admin credential.
 
-The box credential returned HTTP 403 for the settings read, so these setup steps
-could not be performed here. No release was published to test this change.
 The 10 release transaction tests passed using real local Git remotes and
 substituted Terraform and GitHub calls. The new checks failed against the old
 script. Bash syntax checks and Actionlint 1.7.7 also passed.
