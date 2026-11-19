@@ -45,6 +45,9 @@ main.
 
 ## Branch protection
 
+> **Updated (2026-11-17):** The release app also needs Administration read;
+> see [Immutable releases](#addendum-immutable-releases-2026-11-17).
+
 main later began requiring pull requests, and the first release attempt (v1.2.3) was
 rejected: `GITHUB_TOKEN` cannot bypass that rule. We chose to let a dedicated
 release GitHub App bypass it, over a release PR or tags off main, to keep
@@ -67,6 +70,9 @@ Setup (repo admin, once):
    (environment secrets, not repository secrets).
 
 ## Failure modes
+
+> **Updated (2026-11-17):** Tags are locked only after an immutable release is
+> published; see [Immutable releases](#addendum-immutable-releases-2026-11-17).
 
 Validation failure publishes nothing. Concurrent advancement of main or tag
 creation rejects the atomic push, publishing neither ref. Rerun against current
@@ -97,3 +103,35 @@ since v1.2.2 (#27, #29, #31), and Starfolk's coordinator names v1.3.0 as the
 minimum for BYOC image regeneration. The rejected v1.2.3 attempt published
 nothing. This change itself publishes no release and applies no AWS
 infrastructure. Customers upgrade their pin and apply to receive the reporting tag.
+
+## Addendum: immutable releases (2026-11-17)
+
+Release tags must keep pointing to the code customers selected. The original
+workflow never moved tags, but GitHub still allowed someone with write access to
+move them. For [ASK-105](https://linear.app/starfolk/issue/ASK-105), the action now
+requires GitHub's repository release-immutability setting before making any
+commit or push, and verifies that the published release is immutable before
+reporting success. The same verification applies to retries of existing releases.
+
+The release app gains **Administration: read** to inspect the setting. An admin
+enables release immutability once; the action cannot change repository settings. The existing
+atomic main/tag push and retry path stay in place. GitHub locks the tag when the
+release is published, so a failed release creation leaves an unlocked tag until
+a retry succeeds. A setting change during the run can also leave a mutable
+release; the final verification fails rather than reporting success.
+
+Existing releases, including v1.3.0, are not made immutable by enabling the
+setting. The action does not delete or recreate them. Customers can keep pinning
+the full commit SHA; that selects the same module content as its release tag.
+
+Before running the updated action, a repository admin must:
+
+1. Grant the release GitHub App **Administration: read** and accept the updated
+   permissions on its installation.
+2. Enable **Settings > General > Releases > Enable release immutability**, or run
+   `gh api --method PUT repos/starfolkai/terraform-aws-sfk-devbox/immutable-releases`
+   with an admin credential.
+
+The 10 release transaction tests passed using real local Git remotes and
+substituted Terraform and GitHub calls. The new checks failed against the old
+script. Bash syntax checks and Actionlint 1.7.7 also passed.

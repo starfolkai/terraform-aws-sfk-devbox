@@ -32,6 +32,10 @@ jobs:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
+          # Check that release immutability is enabled before publishing.
+          # If the installation lacks Administration read, this token step
+          # fails before release.sh runs; approve the app's updated permissions.
+          permission-administration: read
 
       - uses: actions/checkout@v4
         with:
@@ -43,7 +47,7 @@ jobs:
         with:
           terraform_version: "1.10.5"
 
-      - name: Validate and publish release
+      - name: Validate and publish immutable release
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
