@@ -563,6 +563,15 @@ resource "aws_iam_role_policy" "control" {
         Condition = { StringEquals = { "iam:PassedToService" = "s3.amazonaws.com" } }
       },
       {
+        # Read public TPM identity for boxes managed by this deployment. This
+        # grants no TPM private-key access and does not enable identity checks.
+        Sid       = "ReadManagedBoxEndorsementKey"
+        Effect    = "Allow"
+        Action    = ["ec2:GetInstanceTpmEkPub"]
+        Resource  = "arn:aws:ec2:*:${data.aws_caller_identity.current.account_id}:instance/*"
+        Condition = { StringEquals = { ("aws:ResourceTag/sfk:${var.stage}:managed") = "true" } }
+      },
+      {
         Sid    = "EC2Describe"
         Effect = "Allow"
         Action = [

@@ -323,6 +323,11 @@ your CloudTrail. Starfolk manages boxes through AWS APIs by default; setting
 `enable_coordinator_access = true` additionally permits the coordinator to
 connect directly to TCP 7681 from `coordinator_ingress_cidrs`.
 
+The control role can read the public NitroTPM endorsement key for this deployment's
+managed boxes through `ec2:GetInstanceTpmEkPub`. Reads are restricted to your AWS
+account and `sfk:<stage>:managed=true` instances. This provides an independent
+identity check; it exposes no private key and does not enable TPM enforcement.
+
 The control role permits Starfolk to configure deletion on termination for
 attached disks carrying this module's managed-stage tag. Both disk backup and
 restore need this permission. It does not grant post-launch volume tagging or
