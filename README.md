@@ -316,18 +316,17 @@ reachability would need to be listed explicitly.
 
 ## How permissions / access work
 
-The control role can read the public NitroTPM endorsement key for this deployment's
-managed boxes through `ec2:GetInstanceTpmEkPub`. Reads are restricted to your AWS
-account and `sfk:<stage>:managed=true` instances. This provides an independent
-identity check; it exposes no private key and does not enable TPM enforcement.
-
-
 You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated
 by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h)
 credentials. Revoke any time by removing the role. Every AWS action lands in
 your CloudTrail. Starfolk manages boxes through AWS APIs by default; setting
 `enable_coordinator_access = true` additionally permits the coordinator to
 connect directly to TCP 7681 from `coordinator_ingress_cidrs`.
+
+The control role can read the public NitroTPM endorsement key for this deployment's
+managed boxes through `ec2:GetInstanceTpmEkPub`. Reads are restricted to your AWS
+account and `sfk:<stage>:managed=true` instances. This provides an independent
+identity check; it exposes no private key and does not enable TPM enforcement.
 
 The control role permits Starfolk to configure deletion on termination for
 attached disks carrying this module's managed-stage tag. Both disk backup and

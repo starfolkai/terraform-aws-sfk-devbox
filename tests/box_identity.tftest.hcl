@@ -21,11 +21,11 @@ run "prod_box_identity" {
     condition = one([
       for s in jsondecode(aws_iam_role_policy.control.policy).Statement : s
       if s.Sid == "ReadManagedBoxEndorsementKey"
-    ]) == {
-      Sid = "ReadManagedBoxEndorsementKey"
-      Effect = "Allow"
-      Action = ["ec2:GetInstanceTpmEkPub"]
-      Resource = "arn:aws:ec2:*:123456789012:instance/*"
+      ]) == {
+      Sid       = "ReadManagedBoxEndorsementKey"
+      Effect    = "Allow"
+      Action    = ["ec2:GetInstanceTpmEkPub"]
+      Resource  = "arn:aws:ec2:*:123456789012:instance/*"
       Condition = { StringEquals = { "aws:ResourceTag/sfk:prod:managed" = "true" } }
     }
     error_message = "TPM identity reads must stay in the customer's account and deployment."
@@ -42,11 +42,11 @@ run "staging_box_identity" {
     condition = one([
       for s in jsondecode(aws_iam_role_policy.control.policy).Statement : s
       if s.Sid == "ReadManagedBoxEndorsementKey"
-    ]) == {
-      Sid = "ReadManagedBoxEndorsementKey"
-      Effect = "Allow"
-      Action = ["ec2:GetInstanceTpmEkPub"]
-      Resource = "arn:aws:ec2:*:123456789012:instance/*"
+      ]) == {
+      Sid       = "ReadManagedBoxEndorsementKey"
+      Effect    = "Allow"
+      Action    = ["ec2:GetInstanceTpmEkPub"]
+      Resource  = "arn:aws:ec2:*:123456789012:instance/*"
       Condition = { StringEquals = { "aws:ResourceTag/sfk:staging:managed" = "true" } }
     }
     error_message = "TPM identity reads must stay in the customer's account and deployment."
