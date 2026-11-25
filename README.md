@@ -316,6 +316,12 @@ reachability would need to be listed explicitly.
 
 ## How permissions / access work
 
+The control role can read the public NitroTPM endorsement key for this deployment's
+managed boxes through `ec2:GetInstanceTpmEkPub`. Reads are restricted to your AWS
+account and `sfk:<stage>:managed=true` instances. This provides an independent
+identity check; it exposes no private key and does not enable TPM enforcement.
+
+
 You never give Starfolk a key. This role **trusts Starfolk to assume it**, gated
 by an external ID; Starfolk calls `sts:AssumeRole` for short-lived (1h)
 credentials. Revoke any time by removing the role. Every AWS action lands in
