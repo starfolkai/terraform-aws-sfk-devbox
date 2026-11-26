@@ -258,6 +258,7 @@ resource "aws_ecs_task_definition" "dps" {
     environment = [
       { name = "DPS_BIND", value = "0.0.0.0:${local.dps_port}" },
       { name = "DPS_COORDINATOR_URL", value = var.dps_config.coordinator_url },
+      { name = "DPS_AUDIENCE", value = "https://${local.dps_hostname}" },
       { name = "DPS_ROOT_CA", value = "/etc/ssl/certs/ca-certificates.crt" },
     ]
     secrets = [

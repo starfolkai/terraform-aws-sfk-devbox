@@ -41,6 +41,8 @@ When coordinating a rollout with Starfolk, set `dps_enabled = true` and supply
 The service is one Fargate task behind an **internal TCP NLB**. Only this module's
 box security group can reach the NLB; only the NLB can reach the task. No public
 IP is assigned. TLS ends at DPS and Coordinator-issued tokens gate admission.
+DPS validates box tokens against this deployment’s HTTPS origin (`DPS_AUDIENCE`),
+derived from `dps_config.hostname`. Tokens for another deployment are refused.
 Private DNS is associated only with your VPC; VPN clients need your DNS forwarding.
 
 The task runs non-root with a read-only root filesystem and no AWS application

@@ -59,6 +59,10 @@ run "enabled_private_service" {
     }
   }
   assert {
+    condition     = one([for item in jsondecode(aws_ecs_task_definition.dps[0].container_definitions)[0].environment : item.value if item.name == "DPS_AUDIENCE"]) == "https://dps.customer.org.starfolk.io"
+    error_message = "DPS must validate tokens for this deployment's canonical listener origin."
+  }
+  assert {
     condition = (
       aws_ecs_service.dps[0].desired_count == 1 &&
       !aws_ecs_service.dps[0].network_configuration[0].assign_public_ip &&
