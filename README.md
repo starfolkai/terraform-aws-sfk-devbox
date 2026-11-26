@@ -10,6 +10,51 @@ settings and call this module from your infrastructure repo — see
 [`examples/wrapper/`](examples/wrapper/). Review the source, pin a release tag,
 and apply it with your own credentials; Starfolk never receives a key.
 
+## Data Plane Supervisor rollout
+
+Requires Terraform AWS provider 5.13 or newer for NLB security groups.
+
+`dps_enabled = false` by default. With it off, this module creates **no DPS ECS
+cluster, service, task definition, load balancer, DNS, roles or logs**. Existing
+customer deployments are unchanged.
+
+This is a **temporary rollout switch**. Once DPS is stable, the switch will be
+removed and DPS deployment will become mandatory. It is not a permanent opt-out.
+
+When coordinating a rollout with Starfolk, set `dps_enabled = true` and supply
+`dps_config`:
+
+- `hostname`: your private endpoint, e.g. `dps.<customer>.org.starfolk.io`.
+- `subnet_ids`: existing private subnets in `vpc_id`, with outbound HTTPS through
+  NAT or your private egress path. The module rejects public-IP assignment and
+  Internet Gateway routes; it never changes your routing.
+- `image`: approved DPS image copied into your account/region's ECR repository,
+  pinned as `repository@sha256:<digest>`. Keep your repository immutable and scanned.
+- `tls_secret_arn`: existing Secrets Manager JSON secret in your account/region,
+  containing `TLS_CERT_PEM` and `TLS_KEY_PEM`. The certificate SAN must match the
+  hostname; distribute only its CA trust to boxes. Do not put secret values in
+  Terraform. If encrypted with your KMS key, also supply `tls_kms_key_arn` and
+  permit the created execution role in that key's policy.
+- `coordinator_url`: HTTPS origin used to fetch Coordinator's public signing keys.
+- `alarm_topic_arn`: your existing SNS operations topic in this account/region.
+
+The service is one Fargate task behind an **internal TCP NLB**. Only this module's
+box security group can reach the NLB; only the NLB can reach the task. No public
+IP is assigned. TLS ends at DPS and Coordinator-issued tokens gate admission.
+Private DNS is associated only with your VPC; VPN clients need your DNS forwarding.
+
+The task runs non-root with a read-only root filesystem and no AWS application
+permissions. Its execution role can pull the chosen repository, read only the
+listener secret and write its logs. Logs retain 365 days. New tasks start before
+old tasks retire; existing streams may still be interrupted. Customer Terraform
+owns upgrades through the image digest; no ECS deployment permissions are granted
+to Starfolk's control role.
+
+This module installs the service; it does not enable interception or credential
+substitution. The initial image admits valid identities but refuses application
+traffic until its credential adapter is ready. Clearing the rollout switch after
+installation **removes** DPS resources; it is not a safe traffic fallback.
+
 ## What it creates
 
 - **Subnets** — *either* dedicated ones the module creates (one per `subnet_cidrs` entry) in your `vpc_id`, associated with a route table you already have (`route_table_id`); *or* your **existing** subnets when you set `subnet_ids` (nothing is created). Either way we never create or mutate your VPC/IGW/NAT/routing. See [Subnets: create or bring your own](#subnets-create-or-bring-your-own).
