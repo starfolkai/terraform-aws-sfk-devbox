@@ -65,6 +65,10 @@ module "sfk_byoc" {
   # ingress_source_from_port          = 8080
   # ingress_source_to_port            = 8090
 
+  # Temporary rollout gate only. Once DPS is stable it becomes mandatory.
+  # Requires a module release containing DPS; older pinned releases lack this input.
+  # dps_enabled = false
+
   # Values Starfolk gives you:
   sfk_principal_arn = "arn:aws:iam::450410490644:role/sfk-coordinator-remote-prod"
   # enable_coordinator_access = true                                      # opt-in 7681
