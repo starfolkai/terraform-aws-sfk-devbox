@@ -40,7 +40,7 @@ run "default_creates_no_dps" {
       length(aws_iam_role.dps_exec) == 0 &&
       length(aws_route53_zone.dps) == 0 &&
       length(aws_cloudwatch_log_group.dps) == 0 &&
-      output.dps_endpoint == null
+      output.dps_endpoint == null && output.dps_connection == null
     )
     error_message = "Default rollout gate must create no DPS resources or endpoint."
   }
@@ -50,6 +50,7 @@ run "enabled_private_service" {
   variables {
     dps_enabled = true
     dps_config = {
+      ca_pem          = "test-only-public-ca"
       hostname        = "dps.customer.org.starfolk.io"
       subnet_ids      = ["subnet-0123456789abcdef0"]
       image           = "123456789012.dkr.ecr.us-east-2.amazonaws.com/starfolk/dps@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -57,6 +58,15 @@ run "enabled_private_service" {
       coordinator_url = "https://api.prod.starfolk.io"
       alarm_topic_arn = "arn:aws:sns:us-east-2:123456789012:operations"
     }
+  }
+  assert {
+    condition = output.dps_connection == {
+      enabled       = true
+      endpoint      = "https://dps.customer.org.starfolk.io"
+      ca_pem        = "test-only-public-ca"
+      task_role_arn = aws_iam_role.dps_task[0].arn
+    }
+    error_message = "Hand-back must preserve the exact public trust and workload role without exposing private credentials."
   }
   assert {
     condition     = one([for item in jsondecode(aws_ecs_task_definition.dps[0].container_definitions)[0].environment : item.value if item.name == "DPS_AUDIENCE"]) == "https://dps.customer.org.starfolk.io"
@@ -101,6 +111,7 @@ run "disabled_even_with_configuration" {
   variables {
     dps_enabled = false
     dps_config = {
+      ca_pem          = "test-only-public-ca"
       hostname        = "dps.customer.org.starfolk.io"
       subnet_ids      = ["subnet-0123456789abcdef0"]
       image           = "123456789012.dkr.ecr.us-east-2.amazonaws.com/starfolk/dps@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -125,6 +136,7 @@ run "reject_public_subnet" {
   variables {
     dps_enabled = true
     dps_config = {
+      ca_pem          = "test-only-public-ca"
       hostname        = "dps.customer.org.starfolk.io"
       subnet_ids      = ["subnet-0123456789abcdef0"]
       image           = "123456789012.dkr.ecr.us-east-2.amazonaws.com/starfolk/dps@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -145,6 +157,7 @@ run "reject_wrong_vpc" {
   variables {
     dps_enabled = true
     dps_config = {
+      ca_pem          = "test-only-public-ca"
       hostname        = "dps.customer.org.starfolk.io"
       subnet_ids      = ["subnet-0123456789abcdef0"]
       image           = "123456789012.dkr.ecr.us-east-2.amazonaws.com/starfolk/dps@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -165,6 +178,7 @@ run "reject_internet_gateway_route" {
   variables {
     dps_enabled = true
     dps_config = {
+      ca_pem          = "test-only-public-ca"
       hostname        = "dps.customer.org.starfolk.io"
       subnet_ids      = ["subnet-0123456789abcdef0"]
       image           = "123456789012.dkr.ecr.us-east-2.amazonaws.com/starfolk/dps@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

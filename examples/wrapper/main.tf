@@ -94,6 +94,7 @@ output "sfk_handback" {
     instance_profile  = module.sfk_byoc.instance_profile
     # null unless enable_cost_reporting = true.
     cost_report_url = module.sfk_byoc.cost_report_url
+    dps_connection  = module.sfk_byoc.dps_connection
     # Your `tags`, for the boxes, volumes, snapshots and images Starfolk creates.
     dynamic_resource_tags = module.sfk_byoc.dynamic_resource_tags
   }
