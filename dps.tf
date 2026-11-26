@@ -18,6 +18,7 @@ variable "dps_config" {
     coordinator_url = string
     alarm_topic_arn = string
     tls_kms_key_arn = optional(string)
+    ca_pem          = string # Public listener trust bundle; never a private key.
   })
   default     = null
   description = "DPS rollout inputs. Supply private subnets with outbound HTTPS, a customer ECR digest and a Secrets Manager JSON secret containing TLS_CERT_PEM/TLS_KEY_PEM. Never put secret values here."
@@ -334,4 +335,15 @@ resource "aws_cloudwatch_metric_alarm" "dps_resources" {
 output "dps_endpoint" {
   value       = var.dps_enabled ? "https://${local.dps_hostname}:443" : null
   description = "Private-only endpoint; publishing it does not activate interception."
+}
+
+
+output "dps_connection" {
+  value = var.dps_enabled ? {
+    enabled       = true
+    endpoint      = "https://${local.dps_hostname}"
+    ca_pem        = var.dps_config.ca_pem
+    task_role_arn = aws_iam_role.dps_task[0].arn
+  } : null
+  description = "Public DPS registration for Starfolk's hand-back. Null clears the registration; contains no private key or AWS credential."
 }

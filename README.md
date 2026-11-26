@@ -785,3 +785,18 @@ at a time. If `main` changes during validation, the atomic push fails without
 publishing either ref; rerun against current main. If release creation fails
 after the push, rerunning with the same version finishes from the existing tag.
 The tag-push CI check also catches mismatches on manually created tags.
+
+
+### DPS service registration
+
+The `dps_connection` output supplies the private endpoint, public listener CA
+bundle and ECS task-role ARN to Starfolk through the normal setup hand-back.
+The public CA bundle is the `dps_config.ca_pem` input. It must validate the
+listener certificate stored separately in Secrets Manager. Do not put the
+listener private key in the hand-back.
+
+Coordinator verifies a signed AWS identity proof from that exact role before
+DPS can request rules or approved credentials. The role ARN is registration
+metadata, not a password. Hosted and customer deployments use the same proof.
+When DPS is disabled, this output is null and no DPS ECS resources are created.
+Publishing the output does not enable box interception or the broker adapter.
